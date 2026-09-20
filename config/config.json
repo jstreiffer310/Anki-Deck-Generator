@@ -1,0 +1,44 @@
+{
+  "output_directory": "C:\\Users\\jstre\\Projects\\AnkiDeckCreator\\Decks",
+  "google_drive_decks_directory": "H:\\My Drive\\Admin\\Anki Decks",
+  "classes_base_directory": "H:\\My Drive\\Classes",
+  "highlight_semantics": {
+    "green": {
+      "semantic": "definition",
+      "description": "Definition, explanation, mechanism, or meaning of a term or concept",
+      "target_card_field": "back",
+      "color_keys": ["green", "lightgreen", "#00FF00", "#B7E1CD", "#81C784", "#A5D6A7", "#C8E6C9", "#E8F5E9", "#00E676", "#69F0AE"]
+    },
+    "yellow": {
+      "semantic": "important",
+      "description": "Important concept, key term, high-yield relationship, threshold, or takeaway",
+      "target_card_field": "front_or_active_recall",
+      "color_keys": ["yellow", "#FFFF00", "#FFF2CC", "#FFF176", "#FFF59D", "#FFE082", "#FFEE58", "#FFEB3B", "#FDD835"]
+    },
+    "other": {
+      "semantic": "context",
+      "description": "Ad-hoc highlight, clinical nuance, example, or secondary emphasis",
+      "target_card_field": "notes_or_extra"
+    }
+  },
+  "deck_settings": {
+    "model_name": "University Lecture Recall Model",
+    "css_style": "clean_modern",
+    "tags_enabled": true,
+    "bidirectional_for_definitions": false
+  },
+  "courses": {
+    "PSYC 3590": "Drugs & Behaviour",
+    "PSYC 2110": "Developmental Psychology",
+    "PSYC 3031": "Intermediate Statistics I",
+    "PSYC 3000": "Professionalism & Communication",
+    "PSYC 3250M": "Neural Basis of Behaviour",
+    "PSYC 3250": "Neural Basis of Behaviour",
+    "PSYC 2120": "Social Psychology",
+    "PSYC 2240": "Biological Basis of Behaviour",
+    "PSYC 3140": "Abnormal Psychology",
+    "PSYC 2030": "Research Methods",
+    "PSYC 2260": "Cognition",
+    "NATS 1610": "The Living Body"
+  }
+}

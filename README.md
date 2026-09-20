@@ -1,26 +1,52 @@
 # Academic Anki Deck Generator
 
-A comprehensive, scalable flashcard generation system that transforms course materials into optimized Anki decks. Built for unlimited academic courses with standardized work## 🔧 Technical Requirements
+A comprehensive, scalable flashcard generation system that transforms course materials into optimized Anki decks. Built for academic courses with standardized workflows, SuperMemo 20 Rules compliance, and quality-assured card generation.
+
+---
+
+## 🚀 Unified Lecture Notes Pipeline (New)
+
+The automated extraction and generation pipeline (`scripts/extract_and_generate.py`) extracts highlights from university lecture notes and converts them into atomic active recall cards.
+
+### Core Features:
+- **Polymorphic Ingestion**: Directly ingests either Google Docs (via Google Docs REST API URL or Document ID) or local Word `.docx` files.
+- **The Keyword-Descriptor Framework (`docs/ANKI_SOP.md`)**:
+  - *Keyword as hint* = Active **Recall** (stronger memory).
+  - *Descriptor as hint* = **Recognition** (weaker memory).
+  - Bidirectional pairing strictly enforced for vocabulary and definitions.
+- **Internal Linking-Verb Parsing**: Parses `is`, `are`, `focuses on`, `refers to`, `means`, etc. within full-sentence highlights to prevent vague prompt traps.
+- **Defensive Quality Guardrails (`scripts/card_validator.py`)**: Automatic character length checks, placeholder filtering, figure citation stripping, and deduplication.
+- **Cognitive Taxonomies**: Beyond basic definitions, synthesizes *Function → Structure* (e.g. brain regions), *Concept → Mechanism*, and *Example → Category* formulations.
+- **Automated Delivery**: Compiles native `.apkg` packages with WCAG AAA accessible high-contrast styles, dual-syncs to Google Drive (`Admin/Anki Decks/`), and auto-injects into Anki via AnkiConnect (port 8765).
+- **Test Suite**: 360 automated unit, integration, and E2E tests (`pytest scripts/tests`).
+
+### Quick Start:
+```bash
+# Ingest directly from Google Docs
+python scripts/extract_and_generate.py "https://docs.google.com/document/d/YOUR_DOC_ID/edit"
+
+# Ingest from a local Word document
+python scripts/extract_and_generate.py "path/to/lecture_notes.docx"
+```
+
+---
+
+## 🔧 Technical Requirements
 
 ### Dependencies
-- **Python 3.8+** with packages: `genanki`, `python-docx`, `PyMuPDF`, `nltk`
-- **PowerShell Core** for cross-platform script execution
-- **Anki Desktop** for importing and studying generated decks
+- **Python 3.10+** (see `requirements.txt`)
+- **Anki Desktop** with AnkiConnect addon (optional for auto-injection)
 
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/jstreiffer310/Academic-Anki-Deck-Generator.git
-cd Academic-Anki-Deck-Generator
+git clone https://github.com/jstreiffer310/Anki-Deck-Generator.git
+cd Anki-Deck-Generator
 
 # Install Python dependencies
 pip install -r requirements.txt
-
-# Install PowerShell Core (if needed)
-# Windows: winget install Microsoft.PowerShell
-# macOS: brew install powershell
-# Linux: apt install powershell
 ```
+
 
 ## 🤝 Contributing
 

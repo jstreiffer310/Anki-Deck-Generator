@@ -88,3 +88,9 @@ courses/*/content/raw/
 !*.md
 !*.ps1
 !requirements.txt
+
+# Secrets & API credentials
+credentials.json
+token.json
+auth_url.txt
+*.apkg
