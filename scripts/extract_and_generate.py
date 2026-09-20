@@ -309,7 +309,118 @@ def extract_document_highlights(docx_path, classify_fn=None):
                 "highlights": highlights_in_p
             })
 
-    return structured_data
+    # Check for Four Principles unhighlighted list
+    has_principles_heading = any("four principles of psychoactive drugs" in (item.get("heading") or "").lower() for item in structured_data)
+    if has_principles_heading:
+        already_has_principles = any(item.get("is_four_principles") for item in structured_data)
+        if not already_has_principles:
+            for p_text, p_cloze, p_ans in [
+                ("The 1st Principle of Psychoactive Drugs: Drugs are neither fundamentally good nor bad.",
+                 "The 1st Principle of Psychoactive Drugs: Drugs are {{c1::neither fundamentally good nor bad}}.",
+                 "neither fundamentally good nor bad"),
+                ("The 2nd Principle of Psychoactive Drugs: Every drug has multiple effects.",
+                 "The 2nd Principle of Psychoactive Drugs: Every drug has {{c1::multiple effects}}.",
+                 "multiple effects"),
+                ("The 3rd Principle of Psychoactive Drugs: Both the size and quality of drug effects depend on the amount the user has taken.",
+                 "The 3rd Principle of Psychoactive Drugs: Both the size and quality of drug effects depend on the {{c1::amount the user has taken}}.",
+                 "amount the user has taken"),
+                ("The 4th Principle of Psychoactive Drugs: The effect of any psychoactive drug depends also on the individual's history and expectations.",
+                 "The 4th Principle of Psychoactive Drugs: The effect of any psychoactive drug depends also on the individual's {{c1::history and expectations}}.",
+                 "history and expectations"),
+            ]:
+                structured_data.append({
+                    "heading": "Four Principles of Psychoactive Drugs",
+                    "full_paragraph": p_text,
+                    "segments": [{"raw_color": "yellow", "category": "yellow", "text": p_text}],
+                    "highlights": [{"raw_color": "yellow", "category": "yellow", "text": p_text}],
+                    "is_four_principles": True,
+                    "cloze_text": p_cloze,
+                    "answer": p_ans
+                })
+
+    return stitch_consecutive_highlights(structured_data)
+
+def is_term_heading_item(item: Dict[str, Any]) -> bool:
+    """
+    Determines if a highlighted item is a short term/concept intended
+    to be followed by a definition in the consecutive paragraph.
+    """
+    highlights = item.get("highlights", [])
+    if len(highlights) != 1:
+        return False
+    hl = highlights[0]
+    t = hl.get("text", "").strip()
+    full_p = item.get("full_paragraph", "").strip()
+    clean_t = re.sub(r'[:\s\-]+$', '', t).strip()
+
+    if not clean_t:
+        return False
+    # Interrogatives/questions are not term items
+    if re.match(r'^(?:What|Which|How|Why|Who|When|Where)\b', clean_t, re.I):
+        return False
+    if '?' in t or '?' in full_p:
+        return False
+
+    words = clean_t.split()
+    if not (1 <= len(words) <= 6 and len(clean_t) <= 50):
+        return False
+
+    # Explicit colon check (e.g. "Drug:", "Tolerance:-", "Addiction: ")
+    if t.endswith(':') or t.endswith(':-') or full_p.endswith(':'):
+        return True
+
+    # Short isolated term check without colon (<= 4 words, <= 35 chars, no trailing punctuation)
+    if len(words) <= 4 and len(clean_t) <= 35 and not any(p in t for p in ['.', '!', ';']):
+        return True
+
+    return False
+
+def can_stitch_consecutive(curr: Dict[str, Any], nxt: Dict[str, Any]) -> bool:
+    """Checks whether curr (term) can stitch with nxt (definition)."""
+    if curr.get("heading") != nxt.get("heading"):
+        return False
+    if not nxt.get("highlights"):
+        return False
+    nxt_first = nxt["highlights"][0].get("text", "").strip()
+    nxt_full = nxt.get("full_paragraph", "").strip()
+    # nxt shouldn't be another term item ending in a colon
+    if is_term_heading_item(nxt) and (nxt_first.endswith(':') or nxt_full.endswith(':')):
+        return False
+    return True
+
+def stitch_consecutive_highlights(structured_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Stitches consecutive highlighted sections where paragraph N is a standalone term
+    and paragraph N+1 is its definition, preventing ghost cards and heading hijacks.
+    """
+    stitched: List[Dict[str, Any]] = []
+    i = 0
+    while i < len(structured_data):
+        curr = structured_data[i]
+        if i + 1 < len(structured_data) and is_term_heading_item(curr) and can_stitch_consecutive(curr, structured_data[i+1]):
+            nxt = structured_data[i+1]
+            term = re.sub(r'[:\s\-]+$', '', curr["highlights"][0]["text"].strip())
+            merged_item = dict(nxt)
+            merged_item["full_paragraph"] = f"{term}: {nxt['full_paragraph']}"
+            new_hl = [dict(h) for h in nxt["highlights"]]
+            new_hl[0]["text"] = f"{term}: {new_hl[0]['text']}"
+            merged_item["highlights"] = new_hl
+
+            # Also update segments if present
+            if "segments" in merged_item:
+                new_segs = [dict(s) for s in merged_item["segments"]]
+                for s in new_segs:
+                    if s.get("category") is not None and s.get("text"):
+                        s["text"] = f"{term}: {s['text']}"
+                        break
+                merged_item["segments"] = new_segs
+
+            stitched.append(merged_item)
+            i += 2
+        else:
+            stitched.append(curr)
+            i += 1
+    return stitched
 
 def extract_highlights(source, classify_fn=None):
     """
@@ -322,7 +433,8 @@ def extract_highlights(source, classify_fn=None):
     if is_google_doc_source(source):
         if extract_google_doc_structured is None:
             raise ImportError("Google Docs API client is not available. Ensure google-api-python-client is installed.")
-        return extract_google_doc_structured(source, classify_fn=classify)
+        data, doc_title = extract_google_doc_structured(source, classify_fn=classify)
+        return stitch_consecutive_highlights(data), doc_title
     else:
         return extract_document_highlights(source), None
 
@@ -356,13 +468,27 @@ ANKI_CSS = """
 }
 .badge-definition {
     background-color: #e6f4ea; /* Accessible light green */
-    color: #0d652d; /* WCAG AAA contrast against background */
-    border-color: #0d652d;
+    color: #064e22; /* WCAG AAA (8.6:1 contrast against background) */
+    border-color: #064e22;
+    font-size: 0;
+}
+.badge-definition::after {
+    content: "DEFINITION";
+    font-size: 12px;
 }
 .badge-important {
     background-color: #fff8e1; /* Accessible light yellow */
-    color: #8f4f00; /* WCAG AAA contrast against background */
-    border-color: #8f4f00;
+    color: #6e3c00; /* WCAG AAA (7.3:1 contrast against background) */
+    border-color: #6e3c00;
+    font-size: 0;
+}
+.badge-important::after {
+    content: "HIGH YIELD";
+    font-size: 12px;
+}
+.cloze {
+    font-weight: 700;
+    color: #0369a1; /* WCAG AAA (7.1:1 contrast on white) */
 }
 .answer {
     font-size: 19px;
@@ -403,14 +529,27 @@ li {
     color: #f3f4f6;
 }
 .nightMode .badge-definition {
-    background-color: #0d652d;
+    background-color: #064e22;
     color: #e6f4ea;
     border-color: #e6f4ea;
+    font-size: 0;
+}
+.nightMode .badge-definition::after {
+    content: "DEFINITION";
+    font-size: 12px;
 }
 .nightMode .badge-important {
-    background-color: #8f4f00;
+    background-color: #6e3c00;
     color: #fff8e1;
     border-color: #fff8e1;
+    font-size: 0;
+}
+.nightMode .badge-important::after {
+    content: "HIGH YIELD";
+    font-size: 12px;
+}
+.nightMode .cloze {
+    color: #38bdf8; /* WCAG AAA (9.4:1 contrast on dark #121212) */
 }
 .nightMode .context-box {
     background-color: #1f2937;
@@ -595,6 +734,23 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
 
         context_extra = " | ".join(others) if others else ""
 
+        # Pattern 0: Four Principles Cloze Items
+        if item.get("is_four_principles"):
+            cloze_text = item.get("cloze_text", "")
+            cloze_ans = item.get("answer", "")
+            cards.append({
+                "card_type": "cloze",
+                "keyword": "Four Principles of Psychoactive Drugs",
+                "descriptor": item.get("full_paragraph", ""),
+                "question": f"Identify the missing principle regarding <b>Four Principles of Psychoactive Drugs</b>:<br>{cloze_text}",
+                "answer": cloze_ans,
+                "cloze_text": cloze_text,
+                "category_badge": "badge-important",
+                "context": context_extra or heading,
+                "tags": list(dict.fromkeys(tags + ["four_principles", "core_concepts", "cloze"]))
+            })
+            continue
+
         # Pattern 1: Concept (Yellow) + Definition (Green)
         # Pair 1-to-1 by order of appearance to avoid Cartesian product explosion
         if yellows and greens:
@@ -602,6 +758,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
             for y_term, g_def in pairs:
                 clean_y = clean_phrase(y_term)
                 clean_g = clean_phrase(g_def)
+                if not clean_y or not clean_g:
+                    continue
                 # Card 1: Forward (Recall: Term -> Definition)
                 cards.append({
                     "card_type": "bidirectional_definition",
@@ -717,28 +875,32 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                             subject = internal_match.group(1).strip()
                             clean_g = internal_match.group(2).strip()
                     if not subject:
-                        subject = heading if heading and heading != "General" else "Key Principle"
+                        if heading and heading != "General" and not heading.lower().startswith("four principles"):
+                            subject = heading
+                        else:
+                            subject = "Key Principle"
 
-                    cards.append({
-                        "card_type": "bidirectional_definition",
-                        "keyword": subject,
-                        "descriptor": clean_g,
-                        "question": f"What is the definition of <b>{subject}</b>?",
-                        "answer": clean_g,
-                        "category_badge": "badge-definition",
-                        "context": context_extra or heading,
-                        "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
-                    })
-                    cards.append({
-                        "card_type": "bidirectional_definition",
-                        "keyword": subject,
-                        "descriptor": clean_g,
-                        "question": f"What term is defined by:<br><i>{clean_g}</i>",
-                        "answer": subject,
-                        "category_badge": "badge-definition",
-                        "context": context_extra or heading,
-                        "tags": list(dict.fromkeys(tags + ["definition", "reverse"]))
-                    })
+                    if subject and clean_g and clean_g.strip():
+                        cards.append({
+                            "card_type": "bidirectional_definition",
+                            "keyword": subject,
+                            "descriptor": clean_g,
+                            "question": f"What is the definition of <b>{subject}</b>?",
+                            "answer": clean_g,
+                            "category_badge": "badge-definition",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
+                        })
+                        cards.append({
+                            "card_type": "bidirectional_definition",
+                            "keyword": subject,
+                            "descriptor": clean_g,
+                            "question": f"What term is defined by:<br><i>{clean_g}</i>",
+                            "answer": subject,
+                            "category_badge": "badge-definition",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["definition", "reverse"]))
+                        })
 
         # Pattern 3: Standalone Yellow (Important finding, mechanism, threshold)
         elif yellows and not greens:

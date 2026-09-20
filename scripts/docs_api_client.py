@@ -283,6 +283,16 @@ def extract_google_doc_structured(url_or_id, classify_fn=None):
                     "highlights": highlights_in_p
                 })
 
+        try:
+            from scripts.extract_and_generate import stitch_consecutive_highlights
+            structured_data = stitch_consecutive_highlights(structured_data)
+        except ImportError:
+            try:
+                from extract_and_generate import stitch_consecutive_highlights
+                structured_data = stitch_consecutive_highlights(structured_data)
+            except ImportError:
+                pass
+
         return structured_data, doc_title
 
     except HttpError as err:

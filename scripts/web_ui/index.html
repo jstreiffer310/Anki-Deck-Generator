@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anki Deck Generator — Academic Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --green: #22c55e;
+      --green-bg: #052e16;
+      --green-border: #15803d;
+      --amber: #f59e0b;
+      --amber-bg: #451a03;
+      --amber-border: #b45309;
+      --badge-def: #10b981;
+      --badge-yield: #f59e0b;
+      --surface: #1e293b;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      font-size: 28px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .subtitle { font-size: 13px; color: var(--text-muted); }
+
+    /* Status Bar */
+    .status-bar {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .status-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      font-size: 13px;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+    .dot.online { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.4); }
+    .dot.warn { background: #f59e0b; }
+
+    /* Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Course Grid */
+    .course-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .course-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .course-item:hover, .course-item.selected {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.05);
+      transform: translateY(-1px);
+    }
+    .course-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--accent);
+    }
+    .course-name {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .course-badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      background: #334155;
+      border-radius: 4px;
+      color: #cbd5e1;
+    }
+
+    /* Action Form */
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .radio-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .radio-btn {
+      flex: 1;
+      padding: 10px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      text-align: center;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .radio-btn.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Button */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #fff;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      font-size: 15px;
+      transition: all 0.2s ease;
+    }
+    .btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 8px 14px;
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /* Flashcard Preview */
+    .preview-container {
+      margin-top: 24px;
+    }
+    .metrics-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .metric-pill {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .metric-pill.success {
+      border-color: var(--green-border);
+      color: #4ade80;
+      background: var(--green-bg);
+    }
+
+    .flashcards-scroll {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 480px;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+    .card-preview {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 16px;
+      position: relative;
+    }
+    .card-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .badge-def { background: #064e22; color: #a7f3d0; border: 1px solid #10b981; }
+    .badge-yield { background: #6e3c00; color: #fde68a; border: 1px solid #f59e0b; }
+
+    .q-text { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+    .a-text { font-size: 14px; color: #cbd5e1; border-top: 1px dashed #334155; padding-top: 8px; }
+    .context-tag { font-size: 11px; color: #64748b; margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s ease-in-out infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1>Academic Anki Deck Generator</h1>
+          <div class="subtitle">Zero-Terminal Lecture Notes Pipeline & SuperMemo 20 Rules Engine</div>
+        </div>
+      </div>
+      <div>
+        <button class="btn-secondary" onclick="refreshCourses()">🔄 Refresh Classes</button>
+      </div>
+    </header>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="statusBar">
+      <div class="status-chip">
+        <div class="dot" id="dotAnki"></div>
+        <span id="textAnki">Checking AnkiConnect...</span>
+      </div>
+      <div class="status-chip">
+        <div class="dot" id="dotOAuth"></div>
+        <span id="textOAuth">Checking Google OAuth...</span>
+      </div>
+      <div class="status-chip">
+        <div class="dot" id="dotDrive"></div>
+        <span id="textDrive">Google Drive (H:\)</span>
+      </div>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-grid">
+      <!-- Left: Courses Discovery -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📚 Discovered Courses in Classes</div>
+          <span class="course-badge" id="courseCount">0 Courses</span>
+        </div>
+        <div class="course-list" id="courseList">
+          <div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">
+            Scanning H:\My Drive\Classes...
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Deck Generation Controller -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⚙️ Deck Synthesis Controls</div>
+          <button class="btn-secondary" id="btnOpenFolder" style="display: none;" onclick="openSelectedFolder()">📂 Open Folder</button>
+        </div>
+
+        <div id="noSelectionMessage" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 36px;">
+          👈 Select a course from the left to configure deck generation.
+        </div>
+
+        <div id="courseControls" style="display: none;">
+          <div class="form-group">
+            <label>Course Selected</label>
+            <input type="text" id="inputCourseCode" readonly style="font-weight: 700; color: var(--accent);">
+          </div>
+
+          <div class="form-group">
+            <label>Source Notes Ingestion Mode</label>
+            <div class="radio-group">
+              <div class="radio-btn active" id="modeFile" onclick="setMode('file')">Local Document (.docx)</div>
+              <div class="radio-btn" id="modeGDoc" onclick="setMode('gdoc')">Google Docs API</div>
+            </div>
+          </div>
+
+          <!-- Document Selector -->
+          <div class="form-group" id="fileGroup">
+            <label>Detected Notes Document</label>
+            <select id="selectDoc"></select>
+          </div>
+
+          <!-- Google Doc URL Input -->
+          <div class="form-group" id="gdocGroup" style="display: none;">
+            <label>Google Docs URL or Document ID</label>
+            <input type="text" id="inputGDocUrl" placeholder="https://docs.google.com/document/d/.../edit">
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              Directly fetches highlight colors using official Google Docs REST API.
+            </div>
+          </div>
+
+          <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="checkAutoInject" checked style="width: auto;">
+            <label for="checkAutoInject" style="margin: 0; cursor: pointer;">Auto-inject into running Anki Desktop via AnkiConnect</label>
+          </div>
+
+          <button class="btn" id="btnGenerate" onclick="generateDeck()">
+            <span id="btnText">⚡ Generate & Sync Deck</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Preview & Cards Inspection -->
+    <div class="card preview-container" id="previewContainer" style="display: none;">
+      <div class="card-header">
+        <div class="card-title">✨ Synthesized Cards Inspection</div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-secondary" onclick="openDecksFolder()">📂 Open Decks Folder</button>
+          <button class="btn-secondary" onclick="openDriveFolder()">☁️ Open Google Drive</button>
+        </div>
+      </div>
+
+      <div class="metrics-bar" id="metricsBar"></div>
+
+      <div class="flashcards-scroll" id="cardsList"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentCourses = [];
+    let selectedCourse = null;
+    let currentMode = 'file';
+
+    async function init() {
+      await checkStatus();
+      await refreshCourses();
+    }
+
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        // AnkiConnect
+        const dotAnki = document.getElementById('dotAnki');
+        const textAnki = document.getElementById('textAnki');
+        if (data.anki_connected) {
+          dotAnki.className = 'dot online';
+          textAnki.innerText = 'Anki Desktop Connected (8765)';
+        } else {
+          dotAnki.className = 'dot';
+          textAnki.innerText = 'Anki Offline (Open Anki to auto-inject)';
+        }
+
+        // OAuth
+        const dotOAuth = document.getElementById('dotOAuth');
+        const textOAuth = document.getElementById('textOAuth');
+        if (data.oauth && data.oauth.is_authenticated) {
+          dotOAuth.className = 'dot online';
+          textOAuth.innerText = `Google Docs API: ${data.oauth.user_email || 'Authenticated'}`;
+        } else {
+          dotOAuth.className = 'dot warn';
+          textOAuth.innerText = 'Google OAuth: Pending';
+        }
+
+        // Drive
+        const dotDrive = document.getElementById('dotDrive');
+        const textDrive = document.getElementById('textDrive');
+        if (data.classes_drive_accessible) {
+          dotDrive.className = 'dot online';
+          textDrive.innerText = 'Classes Drive (H:\\) Ready';
+        } else {
+          dotDrive.className = 'dot warn';
+          textDrive.innerText = 'H:\\ Drive not found';
+        }
+      } catch (e) {
+        console.error('Status check error:', e);
+      }
+    }
+
+    async function refreshCourses() {
+      const listEl = document.getElementById('courseList');
+      listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">Scanning H:\\My Drive\\Classes...</div>';
+
+      try {
+        const res = await fetch('/api/courses');
+        const data = await res.json();
+        currentCourses = data.courses || [];
+        document.getElementById('courseCount').innerText = `${currentCourses.length} Courses`;
+
+        if (currentCourses.length === 0) {
+          listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">No courses found in Classes directory.</div>';
+          return;
+        }
+
+        listEl.innerHTML = '';
+        currentCourses.forEach((c, idx) => {
+          const item = document.createElement('div');
+          item.className = `course-item ${selectedCourse && selectedCourse.course_code === c.course_code ? 'selected' : ''}`;
+          item.onclick = () => selectCourse(c);
+
+          const notesCount = c.documents.filter(d => !d.is_syllabus).length;
+          const decksCount = c.existing_decks.length;
+
+          item.innerHTML = `
+            <div>
+              <div class="course-code">${c.course_code}</div>
+              <div class="course-name">${c.course_title}</div>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span class="course-badge">${notesCount} Notes</span>
+              ${decksCount > 0 ? `<span class="course-badge" style="background: var(--green-bg); color: #4ade80; border: 1px solid var(--green-border);">✓ Deck Active</span>` : ''}
+            </div>
+          `;
+          listEl.appendChild(item);
+        });
+
+        if (!selectedCourse && currentCourses.length > 0) {
+          selectCourse(currentCourses[0]);
+        }
+      } catch (e) {
+        listEl.innerHTML = `<div style="color: #ef4444; font-size: 13px; text-align: center; padding: 24px;">Error discovering courses: ${e.message}</div>`;
+      }
+    }
+
+    function selectCourse(c) {
+      selectedCourse = c;
+      document.querySelectorAll('.course-item').forEach(el => el.classList.remove('selected'));
+      event?.currentTarget?.classList?.add('selected');
+
+      document.getElementById('noSelectionMessage').style.display = 'none';
+      document.getElementById('courseControls').style.display = 'block';
+      document.getElementById('btnOpenFolder').style.display = 'inline-block';
+
+      document.getElementById('inputCourseCode').value = `${c.course_code}: ${c.course_title}`;
+
+      // Populate documents dropdown
+      const sel = document.getElementById('selectDoc');
+      sel.innerHTML = '';
+      if (c.documents.length === 0) {
+        sel.innerHTML = '<option value="">No local .docx found (use Google Docs mode)</option>';
+      } else {
+        c.documents.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.path;
+          opt.innerText = `${d.is_syllabus ? '[Syllabus] ' : ''}${d.rel_path} (${(d.size_bytes / 1024).toFixed(0)} KB)`;
+          sel.appendChild(opt);
+        });
+      }
+
+      // Populate Google Doc URL if saved
+      document.getElementById('inputGDocUrl').value = c.saved_gdoc_url || '';
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('modeFile').className = `radio-btn ${mode === 'file' ? 'active' : ''}`;
+      document.getElementById('modeGDoc').className = `radio-btn ${mode === 'gdoc' ? 'active' : ''}`;
+      document.getElementById('fileGroup').style.display = mode === 'file' ? 'block' : 'none';
+      document.getElementById('gdocGroup').style.display = mode === 'gdoc' ? 'block' : 'none';
+    }
+
+    async function openSelectedFolder() {
+      if (selectedCourse) {
+        await fetch('/api/open_folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: selectedCourse.folder_path })
+        });
+      }
+    }
+
+    async function openDecksFolder() {
+      await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'C:\\Users\\jstre\\Projects\\AnkiDeckCreator\\Decks' })
+      });
+    }
+
+    async function openDriveFolder() {
+      await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'H:\\My Drive\\Admin\\Anki Decks' })
+      });
+    }
+
+    async function generateDeck() {
+      if (!selectedCourse) return;
+
+      let source = '';
+      if (currentMode === 'file') {
+        source = document.getElementById('selectDoc').value;
+        if (!source) {
+          alert('Please select a notes document or switch to Google Docs mode.');
+          return;
+        }
+      } else {
+        source = document.getElementById('inputGDocUrl').value.trim();
+        if (!source) {
+          alert('Please enter a Google Docs URL or Document ID.');
+          return;
+        }
+      }
+
+      const btn = document.getElementById('btnGenerate');
+      const btnText = document.getElementById('btnText');
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="spinner"></span> Synthesizing Atomic Cards...';
+
+      try {
+        const payload = {
+          source: source,
+          course_code: selectedCourse.course_code,
+          course_name: selectedCourse.course_title,
+          auto_inject: document.getElementById('checkAutoInject').checked
+        };
+
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert(`Deck Generation Error: ${data.error}`);
+          return;
+        }
+
+        renderDeckPreview(data);
+        await checkStatus();
+        await refreshCourses();
+      } catch (e) {
+        alert(`Generation request failed: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btnText.innerText = '⚡ Generate & Sync Deck';
+      }
+    }
+
+    function renderDeckPreview(data) {
+      const container = document.getElementById('previewContainer');
+      container.style.display = 'block';
+
+      // Metrics Bar
+      const mBar = document.getElementById('metricsBar');
+      mBar.innerHTML = `
+        <div class="metric-pill success">✓ ${data.total_cards} Cards Generated</div>
+        <div class="metric-pill">Recall (Q→A): ${data.metrics.forward_recall}</div>
+        <div class="metric-pill">Recognition (Def→Term): ${data.metrics.reverse_recognition}</div>
+        <div class="metric-pill success">${data.metrics.atomic_compliance}</div>
+        <div class="metric-pill">Synced: ${data.output_filename}</div>
+      `;
+
+      // Cards List
+      const cList = document.getElementById('cardsList');
+      cList.innerHTML = '';
+
+      data.cards.forEach((c, i) => {
+        const isYield = c.badge.includes('important');
+        const badgeClass = isYield ? 'badge-yield' : 'badge-def';
+
+        const cardEl = document.createElement('div');
+        cardEl.className = 'card-preview';
+        cardEl.innerHTML = `
+          <div style="display: flex; justify-content: space-between;">
+            <span class="card-badge ${badgeClass}">${c.badge_label}</span>
+            <span style="font-size: 11px; color: var(--text-muted);">#${i + 1}</span>
+          </div>
+          <div class="q-text">${c.question}</div>
+          <div class="a-text">${c.answer}</div>
+          ${c.context ? `<div class="context-tag">ANCHOR: ${c.context}</div>` : ''}
+        `;
+        cList.appendChild(cardEl);
+      });
+
+      container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Auto-initialize on load
+    window.onload = init;
+  </script>
+</body>
+</html>

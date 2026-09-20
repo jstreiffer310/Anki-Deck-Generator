@@ -346,6 +346,19 @@ class CardValidator:
             if not a:
                 issues.append(ValidationIssue("ERROR", "EMPTY_FIELD", "Answer (Back) is empty."))
 
+        # 1b. Empty HTML tag wrapper check (veto ghost cards e.g. <i></i>)
+        EMPTY_HTML_TAG_PATTERN = r'<(?:i|b|span|em|strong)>\s*</(?:i|b|span|em|strong)>'
+        if not is_cloze:
+            if q and re.search(EMPTY_HTML_TAG_PATTERN, q, re.IGNORECASE):
+                issues.append(ValidationIssue("ERROR", "EMPTY_HTML_WRAPPER", "Question (Front) contains empty HTML tag wrapper."))
+            if a and re.search(EMPTY_HTML_TAG_PATTERN, a, re.IGNORECASE):
+                issues.append(ValidationIssue("ERROR", "EMPTY_HTML_WRAPPER", "Answer (Back) contains empty HTML tag wrapper."))
+        else:
+            if cloze_str and re.search(EMPTY_HTML_TAG_PATTERN, cloze_str, re.IGNORECASE):
+                issues.append(ValidationIssue("ERROR", "EMPTY_HTML_WRAPPER", "Cloze text contains empty HTML tag wrapper."))
+            if a and re.search(EMPTY_HTML_TAG_PATTERN, a, re.IGNORECASE):
+                issues.append(ValidationIssue("ERROR", "EMPTY_HTML_WRAPPER", "Answer (Back) contains empty HTML tag wrapper."))
+
         # 2. Tautology check
         if not is_cloze and q and a:
             clean_q = strip_html_tags(q).strip().lower()
@@ -727,6 +740,8 @@ def has_inadequate_content(text: str) -> bool:
     """Checks whether an answer has inadequate or placeholder content."""
     if not text or not text.strip():
         return True
+    if re.search(r'<(?:i|b|span|em|strong)>\s*</(?:i|b|span|em|strong)>', text, re.IGNORECASE):
+        return True
     clean = strip_html_tags(text).strip()
     if len(clean) < 2:
         return True
@@ -739,6 +754,8 @@ def has_inadequate_content(text: str) -> bool:
 def has_inadequate_question(text: str) -> bool:
     """Checks whether a question is vague, empty, or placeholder."""
     if not text or not text.strip():
+        return True
+    if re.search(r'<(?:i|b|span|em|strong)>\s*</(?:i|b|span|em|strong)>', text, re.IGNORECASE):
         return True
     clean = strip_html_tags(text).strip()
     if len(clean) < 4:

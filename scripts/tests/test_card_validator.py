@@ -180,6 +180,34 @@ class TestCardValidator:
         assert res_spaces.is_valid is False
         assert any(i.rule_id == "EMPTY_FIELD" for i in res_spaces.issues)
 
+    def test_empty_html_wrapper_rejected(self, validator):
+        # Ghost card with empty italic tag wrapper
+        card_ghost = {
+            "question": "What term is defined by:<br><i></i>",
+            "answer": "Drug"
+        }
+        res_ghost = validator.validate_card(card_ghost)
+        assert res_ghost.is_valid is False
+        assert any(i.rule_id == "EMPTY_HTML_WRAPPER" for i in res_ghost.issues)
+
+        # Empty bold wrapper
+        card_b = {
+            "question": "What is the definition of <b></b>?",
+            "answer": "Valid substantive answer text."
+        }
+        res_b = validator.validate_card(card_b)
+        assert res_b.is_valid is False
+        assert any(i.rule_id == "EMPTY_HTML_WRAPPER" for i in res_b.issues)
+
+        # Empty span in answer
+        card_ans = {
+            "question": "What is the primary role of dopamine?",
+            "answer": "<span> </span>"
+        }
+        res_ans = validator.validate_card(card_ans)
+        assert res_ans.is_valid is False
+        assert any(i.rule_id in ("EMPTY_HTML_WRAPPER", "ANSWER_TOO_SHORT") for i in res_ans.issues)
+
     def test_tautology_rejected(self, validator):
         card = {"question": "Dopamine", "answer": "Dopamine"}
         res = validator.validate_card(card)
