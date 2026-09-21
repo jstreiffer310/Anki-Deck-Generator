@@ -119,7 +119,7 @@ class TestRScriptHighlightExtraction:
         assert len(tasks) >= 3
         assert any("extract the third column" in t["descriptor"].lower() for t in tasks)
         assert any("hsb_10[, 3]" in t["answer"] for t in tasks)
-        assert any("filter(write <= 50)" in t["answer"] for t in tasks)
+        assert any("filter(write &lt;= 50)" in t["answer"] or "filter(write <= 50)" in t["answer"] for t in tasks)
         assert any("mutate" in t["answer"] for t in tasks)
 
     @pytest.mark.skipif(not WEEK1_R_PATH.exists(), reason="Week 1_2026.R not accessible on this system")

@@ -8,6 +8,7 @@ import sys
 import json
 import random
 import re
+import html as _html
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any, Union
 import docx
@@ -583,7 +584,8 @@ def extract_r_script_highlights(file_path: Union[str, Path]) -> List[Dict[str, A
                 clean_prompt = clean_task[0].lower() + clean_task[1:] if clean_task else ""
                 clean_prompt = clean_prompt.rstrip('.')
                 q_text = f"In R ({current_heading}), how do you {clean_prompt}?"
-                ans_text = f"<code>{code_solution}</code>"
+                escaped_code = _html.escape(code_solution).replace("\n", "<br>")
+                ans_text = f"<code>{escaped_code}</code>"
 
                 full_p = f"Task: {clean_task}\nSolution:\n{code_solution}"
                 structured_data.append({
