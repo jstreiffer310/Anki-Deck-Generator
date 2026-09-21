@@ -17,7 +17,10 @@ class ContentShield:
 
     SHIELD_PATTERNS = [
         ("CODE_BLOCK", re.compile(r'```[\w]*\n?[\s\S]*?```', re.DOTALL)),
+        ("CODE_HTML", re.compile(r'<pre>[\s\S]*?</pre>|<code>[\s\S]*?</code>', re.IGNORECASE)),
         ("MATH_DISPLAY", re.compile(r'(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])', re.DOTALL)),
+        ("MATH_ANKI_DISPLAY", re.compile(r'\[\$\$\][\s\S]*?\[/\$\$\]', re.IGNORECASE)),
+        ("MATH_ANKI_INLINE", re.compile(r'\[\$\][\s\S]*?\[/\$\]', re.IGNORECASE)),
         ("MATH_INLINE", re.compile(r'(?<!\$)\$(?!\$)(?:\\\$|[^\$\n])+(?<!\$)\$(?!\$)|\\\(.*?\\\)')),
         ("CODE_INLINE", re.compile(r'`[^`\n]+`')),
     ]
@@ -55,11 +58,88 @@ def strip_html_tags(text: str) -> str:
     return re.sub(r'</?[a-zA-Z][a-zA-Z0-9]*(?:\s+[^>]*)?>', '', text)
 
 
+# =============================================================================
+# M9 Failure Modes Elimination Constants
+# =============================================================================
+
+_CRITIQUE_VERB_ROOTS = (
+    r'rejects?|rejected|rejecting|'
+    r'criticizes?|criticized|criticizing|'
+    r'contrasts?|contrasted|contrasting|contrast\s+(?:with|to|against|between|that)|'
+    r'argues?(?:\s+that)?|argued(?:\s+that)?|arguing(?:\s+that)?|'
+    r'challenges?|challenged|challenging|'
+    r'disproves?|disproved|disproving|'
+    r'refutes?|refuted|refuting|'
+    r'suggests?(?:\s+that)?|suggested(?:\s+that)?|suggesting(?:\s+that)?|'
+    r'posits?(?:\s+that)?|posited(?:\s+that)?|positing(?:\s+that)?|'
+    r'claims?(?:\s+that)?|claimed(?:\s+that)?|claiming(?:\s+that)?|'
+    r'opposes?|opposed|opposing|'
+    r'disputes?|disputed|disputing|'
+    r'questions?(?:\s+whether|\s+that)?|questioned|questioning|'
+    r'doubts?(?:\s+that)?|doubted|doubting'
+)
+
+_CRITIQUE_VERBS_COMPOUND = (
+    rf'(?:{_CRITIQUE_VERB_ROOTS})(?:\s+(?:and|or|\&)\s+(?:{_CRITIQUE_VERB_ROOTS}))*'
+)
+
+_AUTHOR_CITATION_PREFIX = (
+    r'^(?:[A-Z][a-zA-Z0-9\'\.\-]*(?:\s+(?:et\s+al\.?|and|\&|[A-Z][a-zA-Z0-9\'\.\-]*))*(?:\s*\(\d{4}[a-z]?\))?\s+)?'
+)
+
+CRITIQUE_ACTION_REGEX = re.compile(
+    rf'{_AUTHOR_CITATION_PREFIX}{_CRITIQUE_VERBS_COMPOUND}\b',
+    re.IGNORECASE
+)
+
+CRITIQUE_STANDALONE_WORDS = {
+    'REJECT', 'REJECTS', 'REJECTED', 'REJECTING',
+    'CRITICIZE', 'CRITICIZES', 'CRITICIZED', 'CRITICIZING',
+    'CONTRAST', 'CONTRASTS', 'CONTRASTED', 'CONTRASTING',
+    'CHALLENGE', 'CHALLENGES', 'CHALLENGED', 'CHALLENGING',
+    'DISPROVE', 'DISPROVES', 'DISPROVED', 'DISPROVING',
+    'REFUTE', 'REFUTES', 'REFUTED', 'REFUTING'
+}
+
+DEFINITIONAL_FRAMING_REGEX = re.compile(
+    r'^(?:(?:the|a|an)\s+)?'
+    r'(?:(?:[a-zA-Z0-9\'-]+|\band\b|\bor\b)\s+){0,4}'
+    r'(?:process\s+(?:in\s+which|where|by\s+which|whereby|of)|'
+    r'mechanism\s+(?:that|which|by\s+which|whereby|of)|'
+    r'condition\s+(?:where|in\s+which|characterized\s+by)|'
+    r'state\s+(?:of|in\s+which|where)|'
+    r'movement\s+of|'
+    r'formation\s+of|'
+    r'capacity\s+(?:to|for)|'
+    r'ability\s+to|'
+    r'tendency\s+(?:to|for)|'
+    r'phenomenon\s+(?:in\s+which|where|characterized\s+by)|'
+    r'cascade\s+(?:that|which|by\s+which|of)|'
+    r'pathway\s+(?:that|which|by\s+which|whereby|of))\b',
+    re.IGNORECASE
+)
+
+RELATIVE_CLAUSE_REGEX = re.compile(
+    r'\b(?:in\s+which|by\s+which|where\s+by|whereby|characterized\s+by|'
+    r'(?:theorists?|people|individuals?|children|patients?)\s+(?:who|that))\b',
+    re.IGNORECASE
+)
+
+NESTED_QUESTION_PATTERN = re.compile(
+    r'What is the (?:definition|clinical significance|key mechanism|primary role|statistical role|key statistical principle|developmental significance|key developmental process|ethical significance|key ethical rule or principle)\s+(?:of|regarding)\s+(?:<b>)?\s*(?:What|Why|How|When|Where|Who|Which|Can|Does|Is|Are|Should)\b',
+    re.IGNORECASE
+)
+
+
 @dataclass
 class ValidationIssue:
     severity: str  # "ERROR" | "WARNING"
     rule_id: str
     message: str
+
+    @property
+    def code(self) -> str:
+        return self.rule_id
 
     def __str__(self) -> str:
         return f"{self.severity}: {self.rule_id} - {self.message}"
@@ -403,6 +483,17 @@ class CardValidator:
             norm_a = re.sub(r'[^a-z0-9]', '', clean_a)
             if norm_q == norm_a and norm_q:
                 issues.append(ValidationIssue("ERROR", "TAUTOLOGY", "Question and Answer are identical/tautological."))
+            elif norm_a and len(norm_a) >= 8 and norm_a in norm_q:
+                stripped_q = norm_q.replace(norm_a, '')
+                prompt_boilerplate = {
+                    '', 'regarding', 'whatisthedefinitionof', 'whatistheclinicalsignificanceof',
+                    'whatistheprimaryroleof', 'whatisthekeymechanismregarding',
+                    'whatisthestatisticalroleorruleof', 'whatisthedevelopmentalsignificanceof',
+                    'whatistheethicalsignificanceof', 'whatisthekeystatisticalprincipleof',
+                    'whatisthekeydevelopmentalprocessof', 'whatisthekeyethicalruleorprincipleof'
+                }
+                if stripped_q in prompt_boilerplate or stripped_q.startswith('regarding'):
+                    issues.append(ValidationIssue("ERROR", "TAUTOLOGY", "Question and Answer are identical/tautological."))
 
         # 3. Cloze validation
         if is_cloze and cloze_str:
@@ -515,6 +606,42 @@ class CardValidator:
             issues.append(ValidationIssue(
                 "WARNING", "ANSWER_WORDY",
                 f"Answer has {len(a.split())} words; optimal atomic recall is <= 25 words."
+            ))
+
+        # 10. Failure Modes Elimination (M9 Guardrails)
+        kw = card.get("keyword") or sanitized.get("keyword")
+        if kw:
+            clean_kw = strip_html_tags(str(kw)).strip()
+            # Action verb / critique keyword veto
+            if clean_kw.upper() in CRITIQUE_STANDALONE_WORDS or CRITIQUE_ACTION_REGEX.search(clean_kw):
+                issues.append(ValidationIssue(
+                    "ERROR", "ACTION_VERB_KEYWORD",
+                    f"Keyword '{clean_kw}' is an action verb or critique phrase."
+                ))
+
+            # Definitional framing phrase as keyword veto
+            if DEFINITIONAL_FRAMING_REGEX.search(clean_kw) or RELATIVE_CLAUSE_REGEX.search(clean_kw):
+                issues.append(ValidationIssue(
+                    "ERROR", "DEFINITIONAL_FRAMING_KEYWORD",
+                    f"Keyword '{clean_kw}' begins with relative clause or definitional framing."
+                ))
+
+            # Inverted definition card veto
+            if card_type == "bidirectional_definition":
+                if len(clean_kw.split()) > 6 or len(clean_kw) > 55 or \
+                   (len(clean_kw.split()) > 4 and re.match(r'^(?:the|a|an)\s+', clean_kw, re.I)) or \
+                   DEFINITIONAL_FRAMING_REGEX.search(clean_kw) or \
+                   RELATIVE_CLAUSE_REGEX.search(clean_kw):
+                    issues.append(ValidationIssue(
+                        "ERROR", "INVERTED_CARD_DEFINITION",
+                        f"Keyword '{clean_kw}' appears to be a definition rather than a concise concept term."
+                    ))
+
+        # Nested interrogative prompt veto
+        if q and NESTED_QUESTION_PATTERN.search(q):
+            issues.append(ValidationIssue(
+                "ERROR", "NESTED_QUESTION_PROMPT",
+                f"Question contains nested interrogative phrase: '{q}'."
             ))
 
         is_valid = not any(issue.severity == "ERROR" for issue in issues)
@@ -726,6 +853,9 @@ R_SYNTAX_CUES = [
     r"\bshapiro\.test\(", r"\bggplot\(", r"\bsummary\(", r"\bdata\.frame\(",
     r"\bpairwise\.t\.test\(", r"\boneway\.test\(", r"\bpsych::describe\(",
     r"\bdplyr::", r"\bmutate\(", r"\bfilter\(", r"\bselect\(",
+    r"\bread\.csv\(", r"\bgetwd\(", r"\bstr\(", r"\bview\(",
+    r"\bdbl\b", r"\bint\b", r"\blgl\b", r"\bchr\b",
+    r"\[row,\s*col\]", r"%\>%", r"\|\>",
     r"\blibrary\([a-zA-Z0-9\._]+\)", r"`[a-zA-Z0-9_\.]+\(.*?\)`",
     r"\bcoercion\b", r"\btibble\b", r"\bdata\.frame\b"
 ]

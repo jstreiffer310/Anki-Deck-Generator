@@ -344,9 +344,18 @@ def detect_input_type(source: str, raise_on_error: bool = False) -> str:
         except Exception:
             return "docx_missing"
 
+    if source_str.lower().endswith((".r", ".rmd")):
+        try:
+            if p.exists() and p.is_file():
+                return "r_script"
+            else:
+                return "r_missing"
+        except Exception:
+            return "r_missing"
+
     try:
         if p.exists() and p.is_file():
-            # Existing file with non-docx extension (e.g. .pdf, .txt)
+            # Existing file with unsupported extension (e.g. .pdf, .txt)
             if raise_on_error:
                 raise ValueError(f"Unrecognized or unsupported input source format: {source}")
             return "invalid"
@@ -364,7 +373,7 @@ def detect_input_type(source: str, raise_on_error: bool = False) -> str:
 def ingest_source(source: str, classify_fn: Optional[Callable] = None) -> Tuple[List[Dict[str, Any]], str]:
     """
     Polymorphically extracts structured paragraph highlights and document title
-    from a Google Docs URL, Document ID, or local .docx file.
+    from a Google Docs URL, Document ID, local .docx file, or local .R/.Rmd script.
 
     Returns:
         tuple: (structured_data: list[dict], document_title: str)
@@ -388,6 +397,19 @@ def ingest_source(source: str, classify_fn: Optional[Callable] = None) -> Tuple[
         return data, title
     elif input_type == "docx_missing":
         raise FileNotFoundError(f"Specified .docx file not found at: {source}")
+    elif input_type in ("r_script",):
+        try:
+            from scripts.extract_and_generate import extract_r_script_highlights
+        except ImportError:
+            from extract_and_generate import extract_r_script_highlights
+        data = extract_r_script_highlights(source)
+        try:
+            title = Path(source).stem if Path(source).exists() else ""
+        except Exception:
+            title = ""
+        return data, title
+    elif input_type == "r_missing":
+        raise FileNotFoundError(f"Specified R script file not found at: {source}")
     else:
         raise ValueError(f"Unrecognized or unsupported input source format: {source}")
 

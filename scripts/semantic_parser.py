@@ -129,12 +129,26 @@ FUNCTIONAL_COPULAS = [
     r"\bcomprise\b",
     r"\bresults\s+from\b",
     r"\bresult\s+from\b",
+    r"\bresults\s+in\b",
+    r"\bresult\s+in\b",
     r"\bleads\s+to\b",
     r"\blead\s+to\b",
     r"\bcauses\b",
     r"\bcause\b",
+    r"\bmanifests\s+as\b",
+    r"\bmanifest\s+as\b",
     r"\boccurs\s+when\b",
     r"\boccur\s+when\b",
+    r"\boccurs\s+after\b",
+    r"\boccur\s+after\b",
+    r"\boccurs\s+via\b",
+    r"\boccur\s+via\b",
+    r"\boccurs\s+during\b",
+    r"\boccur\s+during\b",
+    r"\boccurs\s+with\b",
+    r"\boccur\s+with\b",
+    r"\boccurs\s+in\b",
+    r"\boccur\s+in\b",
     r"\bdescribes\b",
     r"\bdescribe\b",
     r"\bmediates\b",
@@ -149,6 +163,20 @@ FUNCTIONAL_COPULAS = [
     r"\bregulate\b",
     r"\bmodulates\b",
     r"\bmodulate\b",
+    r"\bstabilizes\b",
+    r"\bstabilize\b",
+    r"\bbinds\s+to\b",
+    r"\bbind\s+to\b",
+    r"\bbinds\s+without\b",
+    r"\bbind\s+without\b",
+    r"\bbinds\b",
+    r"\bbind\b",
+    r"\bactivates\b",
+    r"\bactivate\b",
+    r"\binhibits\b",
+    r"\binhibit\b",
+    r"\bblocks\b",
+    r"\bblock\b",
 ]
 
 # Class 4: Statistical, Methodological & Computational Copulas (24 patterns)
@@ -414,8 +442,10 @@ def clean_phrase(text: str) -> str:
     return t
 
 def strip_leading_articles(term: str) -> str:
-    """Strips leading English articles (The, A, An) from a term and capitalizes."""
-    clean = re.sub(r'^(the|a|an)\s+', '', term.strip(), flags=re.IGNORECASE).strip()
+    """Strips leading English articles (The, A, An), wrapping quotes, and trailing punctuation from a term."""
+    clean = re.sub(r'^["\'`“”’‘]+|["\'`“”’‘]+$', '', term.strip()).strip()
+    clean = re.sub(r'^(the|a|an)\s+', '', clean, flags=re.IGNORECASE).strip()
+    clean = re.sub(r'[\.\s\…:;\-]+$', '', clean).strip()
     if clean:
         return clean[0].upper() + clean[1:]
     return clean
@@ -578,6 +608,259 @@ def create_cloze_card(
 
 
 # ============================================================================
+# Failure Mode Elimination & Concept Keyword Validation (Milestone M9)
+# ============================================================================
+
+_CRITIQUE_VERB_ROOTS = (
+    r'rejects?|rejected|rejecting|'
+    r'criticizes?|criticized|criticizing|'
+    r'contrasts?|contrasted|contrasting|contrast\s+(?:with|to|against|between|that)|'
+    r'argues?(?:\s+that)?|argued(?:\s+that)?|arguing(?:\s+that)?|'
+    r'challenges?|challenged|challenging|'
+    r'disproves?|disproved|disproving|'
+    r'refutes?|refuted|refuting|'
+    r'suggests?(?:\s+that)?|suggested(?:\s+that)?|suggesting(?:\s+that)?|'
+    r'posits?(?:\s+that)?|posited(?:\s+that)?|positing(?:\s+that)?|'
+    r'claims?(?:\s+that)?|claimed(?:\s+that)?|claiming(?:\s+that)?|'
+    r'opposes?|opposed|opposing|'
+    r'disputes?|disputed|disputing|'
+    r'questions?(?:\s+whether|\s+that)?|questioned|questioning|'
+    r'doubts?(?:\s+that)?|doubted|doubting'
+)
+
+_CRITIQUE_VERBS_COMPOUND = (
+    rf'(?:{_CRITIQUE_VERB_ROOTS})(?:\s+(?:and|or|\&)\s+(?:{_CRITIQUE_VERB_ROOTS}))*'
+)
+
+_AUTHOR_CITATION_PREFIX = (
+    r'^(?:[A-Z][a-zA-Z0-9\'\.\-]*(?:\s+(?:et\s+al\.?|and|\&|[A-Z][a-zA-Z0-9\'\.\-]*))*(?:\s*\(\d{4}[a-z]?\))?\s+)?'
+)
+
+CRITIQUE_ACTION_REGEX = re.compile(
+    rf'{_AUTHOR_CITATION_PREFIX}{_CRITIQUE_VERBS_COMPOUND}\b',
+    re.IGNORECASE
+)
+
+CRITIQUE_STANDALONE_WORDS = {
+    'REJECT', 'REJECTS', 'REJECTED', 'REJECTING',
+    'CRITICIZE', 'CRITICIZES', 'CRITICIZED', 'CRITICIZING',
+    'CONTRAST', 'CONTRASTS', 'CONTRASTED', 'CONTRASTING',
+    'CHALLENGE', 'CHALLENGES', 'CHALLENGED', 'CHALLENGING',
+    'DISPROVE', 'DISPROVES', 'DISPROVED', 'DISPROVING',
+    'REFUTE', 'REFUTES', 'REFUTED', 'REFUTING'
+}
+
+DEFINITIONAL_FRAMING_REGEX = re.compile(
+    r'^(?:(?:the|a|an)\s+)?'
+    r'(?:(?:[a-zA-Z0-9\'-]+|\band\b|\bor\b)\s+){0,4}'
+    r'(?:process\s+(?:in\s+which|where|by\s+which|whereby|of)|'
+    r'mechanism\s+(?:that|which|by\s+which|whereby|of)|'
+    r'condition\s+(?:where|in\s+which|characterized\s+by)|'
+    r'state\s+(?:of|in\s+which|where)|'
+    r'movement\s+of|'
+    r'formation\s+of|'
+    r'capacity\s+(?:to|for)|'
+    r'ability\s+to|'
+    r'tendency\s+(?:to|for)|'
+    r'phenomenon\s+(?:in\s+which|where|characterized\s+by)|'
+    r'cascade\s+(?:that|which|by\s+which|of)|'
+    r'pathway\s+(?:that|which|by\s+which|whereby|of))\b',
+    re.IGNORECASE
+)
+
+INTERROGATIVE_REGEX = re.compile(
+    r'^(?:what|why|how|when|where|who|which|can|does|do|is|are|should|could|would)\b',
+    re.IGNORECASE
+)
+
+RELATIVE_CLAUSE_REGEX = re.compile(
+    r'\b(?:in\s+which|by\s+which|where\s+by|whereby|characterized\s+by|'
+    r'(?:theorists?|people|individuals?|children|patients?)\s+(?:who|that))\b',
+    re.IGNORECASE
+)
+
+
+def is_interrogative_note(text: str) -> bool:
+    """
+    Determines if a highlighted note is a genuine question/interrogative note (Card 11).
+    Excludes definitions that contain colons/copulas with trailing question marks (e.g. 'Term ::: Def ???').
+    Excludes declarative conditional statements starting with 'When ...' that lack question marks.
+    """
+    if not text:
+        return False
+    clean = clean_phrase(text).strip()
+    # If text contains definition separator (:::, :=, : [), it is a definition, not an interrogative
+    if ":::" in clean or ":=" in clean or re.search(r':\s*\[', clean):
+        return False
+    has_question_mark = "?" in clean
+    lower = clean.lower()
+    # Declarative starting with 'when ' without a question mark is NOT an interrogative
+    if lower.startswith("when ") and not has_question_mark:
+        return False
+    direct_q_starters = (
+        "what ", "why ", "how ", "where ", "who ", "which ",
+        "can ", "does ", "do ", "is it ", "are there ", "should ",
+        "could ", "would ", "is there ", "what are ", "what is "
+    )
+    if any(lower.startswith(q) for q in direct_q_starters):
+        return True
+    if lower.startswith("when ") and has_question_mark:
+        return True
+    if clean.rstrip().endswith("?"):
+        if any(c in lower for c in (" is defined as ", " refers to ", " is characterized by ", " represents ")):
+            return False
+        return True
+    return False
+
+
+def is_valid_concept_keyword(term: str) -> bool:
+    """
+    Validates whether a string represents a clean, nominal concept keyword
+    rather than an action verb phrase, critique, full sentence, or interrogative.
+    """
+    if not term:
+        return False
+    clean = clean_phrase(term).strip()
+    # Strip wrapping quotes
+    clean = re.sub(r'^["\'`“”’‘]+|["\'`“”’‘]+$', '', clean).strip()
+    # Strip trailing ellipsis, periods, colons, hyphens
+    clean = re.sub(r'[\.\s\…:;\-]+$', '', clean).strip()
+    if not clean:
+        return False
+
+    words = clean.split()
+    if not (1 <= len(words) <= 8 and 2 <= len(clean) <= 65):
+        return False
+    if any(p in clean for p in ['?', '!', ';']):
+        return False
+
+    # Check parens/brackets: reject pure parentheticals "(...)"
+    if clean.startswith('(') and clean.endswith(')'):
+        return False
+    if clean.startswith(('(', '[')):
+        # Allow stereoisomer / chemical notation like (R)-, (S)-, (+)-, (-)-, (±)-, [3H]-
+        if not re.match(r'^[(\[][0-9A-Za-z\+\-\,\s±]+[)\]]-', clean):
+            return False
+    elif clean.startswith(('—', '–', '-', '...', ':', '/')):
+        return False
+
+    # Disqualify interrogatives
+    if '?' in clean or INTERROGATIVE_REGEX.search(clean):
+        return False
+
+    # Disqualify action verbs and critique phrases
+    if clean.upper() in CRITIQUE_STANDALONE_WORDS or CRITIQUE_ACTION_REGEX.search(clean):
+        return False
+
+    # Disqualify relative-clause and definitional framing phrases
+    if DEFINITIONAL_FRAMING_REGEX.search(clean) or RELATIVE_CLAUSE_REGEX.search(clean):
+        return False
+
+    # Disqualify participle modifier clauses (e.g. 'Neurotransmitter found in the raphe nuclei')
+    if re.search(r'\b(?:found|located|produced|synthesized|acting|derived|associated|involved|stored|released)\s+(?:in|by|at|from|with|on)\b', clean, re.I):
+        return False
+
+    lower = clean.lower()
+    disqualified_leads = (
+        'and', 'or', 'while', 'whereas', 'because', 'although', 'since', 'if',
+        'in r', 'how do you', 'accomplish', 'begins in', 'begins during',
+        'numbers with', 'values with'
+    )
+    for lead in disqualified_leads:
+        if lower == lead or lower.startswith(lead + ' '):
+            return False
+    return True
+
+
+def resolve_keyword_descriptor_pair(
+    term_candidate: str,
+    def_candidate: str,
+    term_color: str = "yellow",
+    def_color: str = "green"
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Dynamically evaluates which highlight is the Concept Keyword and which is the Descriptor
+    using is_valid_concept_keyword() and cognitive heuristics.
+    Eliminates inverted cards where definitions become questions and terms become answers.
+    Returns (keyword, descriptor) or (None, None) if neither is a valid concept keyword or if critique.
+    """
+    clean_1 = clean_phrase(term_candidate).strip() if term_candidate else ""
+    clean_2 = clean_phrase(def_candidate).strip() if def_candidate else ""
+
+    if not clean_1 or not clean_2:
+        return None, None
+
+    # Critiques / action verbs cannot be standard definition descriptors or keywords
+    if (CRITIQUE_ACTION_REGEX.search(clean_1) or clean_1.upper() in CRITIQUE_STANDALONE_WORDS or
+        CRITIQUE_ACTION_REGEX.search(clean_2) or clean_2.upper() in CRITIQUE_STANDALONE_WORDS):
+        return None, None
+
+    # Definitional framing or relative clause check: the framed candidate MUST be the descriptor
+    is_framing_1 = bool(DEFINITIONAL_FRAMING_REGEX.search(clean_1) or RELATIVE_CLAUSE_REGEX.search(clean_1) or
+                        re.match(r'^(?:the|a|an)\s+.*?\b(?:that|which|where|whereby|who|of|in)\b', clean_1, re.I))
+    is_framing_2 = bool(DEFINITIONAL_FRAMING_REGEX.search(clean_2) or RELATIVE_CLAUSE_REGEX.search(clean_2) or
+                        re.match(r'^(?:the|a|an)\s+.*?\b(?:that|which|where|whereby|who|of|in)\b', clean_2, re.I))
+
+    if is_framing_1 and not is_framing_2:
+        return clean_2, clean_1
+    if is_framing_2 and not is_framing_1:
+        return clean_1, clean_2
+
+    v1 = is_valid_concept_keyword(clean_1)
+    v2 = is_valid_concept_keyword(clean_2)
+
+    # Case 1: Exactly one is a valid concept keyword
+    if v1 and not v2:
+        return clean_1, clean_2
+    if v2 and not v1:
+        return clean_2, clean_1  # SWAP: eliminates card inversion!
+
+    # Case 2: Both satisfy validity rules -> apply cognitive heuristics
+    if v1 and v2:
+        w1, w2 = len(clean_1.split()), len(clean_2.split())
+        # Heuristic 0: Candidate starts with article (a, an, the) + longer word count -> definition
+        art_1 = bool(re.match(r'^(?:the|a|an)\s+', clean_1, re.I))
+        art_2 = bool(re.match(r'^(?:the|a|an)\s+', clean_2, re.I))
+        if art_1 and not art_2 and w1 > w2:
+            return clean_2, clean_1
+        if art_2 and not art_1 and w2 > w1:
+            return clean_1, clean_2
+
+        # Heuristic A: Significant word count discrepancy (shorter is term, longer is definition)
+        if w1 <= 3 and w2 > 3:
+            return clean_1, clean_2
+        if w2 <= 3 and w1 > 3:
+            return clean_2, clean_1
+        if w1 >= 5 and w2 <= 4:
+            return clean_2, clean_1
+        if w2 >= 5 and w1 <= 4:
+            return clean_1, clean_2
+        if abs(w1 - w2) >= 2:
+            if w1 < w2:
+                return clean_1, clean_2
+            else:
+                return clean_2, clean_1
+
+        # Heuristic B: Acronyms or Title Case presence (e.g. "LTP", "GABA")
+        has_caps_1 = bool(re.search(r'\b[A-Z]{2,}\b', clean_1))
+        has_caps_2 = bool(re.search(r'\b[A-Z]{2,}\b', clean_2))
+        if has_caps_1 and not has_caps_2:
+            return clean_1, clean_2
+        if has_caps_2 and not has_caps_1:
+            return clean_2, clean_1
+
+        # Heuristic C: Tie-breaker defaults to Yellow = Term, Green = Descriptor
+        if term_color.lower() == "yellow" and def_color.lower() == "green":
+            return clean_1, clean_2
+        elif def_color.lower() == "yellow" and term_color.lower() == "green":
+            return clean_2, clean_1
+        return clean_1, clean_2
+
+    # Case 3: Neither is a valid concept keyword
+    return None, None
+
+
+# ============================================================================
 # 5. Deterministic Multi-Tier Subject Resolution Algorithm
 # ============================================================================
 
@@ -588,9 +871,10 @@ def split_highlight_fallback(
 ) -> Tuple[str, str, str]:
     """
     Robust deterministic parser that splits text into (Keyword, Descriptor, Tier)
-    guaranteeing ZERO occurrence of 'this concept'.
+    guaranteeing ZERO occurrence of 'this concept' and preventing broken clause/action-verb keywords.
 
     Resolution Order:
+      Framing Bypass: Definitional Framing Early Interception (Card 138 fix)
       Tier 1: Internal Linking Verb Split within highlight text
       Tier 2: Paragraph Prefix Search
       Tier 3: Structural Anchor (Heading / First Clause)
@@ -600,6 +884,36 @@ def split_highlight_fallback(
         fallback_anchor = heading_context if heading_context and heading_context != "General" else "Key Concept"
         return fallback_anchor, fallback_anchor, "tier3_empty_fallback"
 
+    # --- Framing Bypass: Definitional Framing Early Interception (Card 138 fix) ---
+    if DEFINITIONAL_FRAMING_REGEX.search(text):
+        clean_def = text[0].upper() + text[1:] if text else ""
+        if not clean_def.endswith((".", "!", "?")) and clean_def:
+            clean_def += "."
+
+        # Check paragraph prefix for preceding subject (e.g. "Neurogenesis: ")
+        if paragraph_prefix:
+            pref = clean_phrase(paragraph_prefix)
+            if pref.endswith(":"):
+                candidate = strip_leading_articles(pref[:-1].strip())
+                if is_valid_concept_keyword(candidate):
+                    return candidate, clean_def, "framing_prefix_colon"
+            pref_match = LINKING_VERBS_REGEX.search(pref)
+            if pref_match:
+                candidate = strip_leading_articles(pref[:pref_match.start()].strip())
+                if is_valid_concept_keyword(candidate):
+                    return candidate, clean_def, "framing_prefix_copula"
+            pref_sentences = [s.strip() for s in re.split(r'[\.\?!;]\s*', pref) if s.strip()]
+            if pref_sentences:
+                trailing = pref_sentences[-1]
+                trailing = re.sub(r'[:\-\—\s]+$', '', trailing).strip()
+                clean_trailing = strip_leading_articles(trailing)
+                if is_valid_concept_keyword(clean_trailing):
+                    return clean_trailing, clean_def, "framing_prefix_trailing"
+
+        # Structural heading anchor
+        anchor = heading_context if heading_context and heading_context != "General" else "Key Principle"
+        return anchor, clean_def, "framing_heading_anchor"
+
     # --- Tier 1: Internal Linking Verb Split ---
     match = LINKING_VERBS_REGEX.search(text)
     if match:
@@ -607,10 +921,13 @@ def split_highlight_fallback(
         verb_part = match.group(1).strip()
         def_part = text[match.end():].strip()
 
-        # Check for subordinate leading words that indicate term_part is not a clean concept
-        subordinate_leads = ("when", "if", "because", "although", "since", "while", "whereas")
-        if 2 <= len(term_part) <= 60 and not term_part.lower().startswith(subordinate_leads):
-            clean_term = strip_leading_articles(term_part)
+        # Clean term_part of quotes and trailing dots before checking validity
+        clean_cand = re.sub(r'^["\'`“”’‘]+|["\'`“”’‘]+$', '', term_part).strip()
+        clean_cand = re.sub(r'[\.\s\…:;\-]+$', '', clean_cand).strip()
+
+        # Check that clean_cand is a valid concept keyword
+        if is_valid_concept_keyword(clean_cand) and 2 <= len(clean_cand) <= 65:
+            clean_term = strip_leading_articles(clean_cand)
             clean_def = def_part[0].upper() + def_part[1:] if def_part else ""
             if not clean_def.endswith((".", "!", "?")) and clean_def:
                 clean_def += "."
@@ -624,7 +941,7 @@ def split_highlight_fallback(
         if pref_match:
             candidate = pref[:pref_match.start()].strip()
             clean_cand = strip_leading_articles(candidate)
-            if 2 <= len(clean_cand) <= 60:
+            if is_valid_concept_keyword(clean_cand) and 2 <= len(clean_cand) <= 65:
                 clean_def = text[0].upper() + text[1:] if text else ""
                 if not clean_def.endswith((".", "!", "?")) and clean_def:
                     clean_def += "."
@@ -634,7 +951,7 @@ def split_highlight_fallback(
         if pref.endswith(":"):
             candidate = pref[:-1].strip()
             clean_cand = strip_leading_articles(candidate)
-            if 2 <= len(clean_cand) <= 60:
+            if is_valid_concept_keyword(clean_cand) and 2 <= len(clean_cand) <= 65:
                 clean_def = text[0].upper() + text[1:] if text else ""
                 if not clean_def.endswith((".", "!", "?")) and clean_def:
                     clean_def += "."
@@ -646,24 +963,24 @@ def split_highlight_fallback(
             trailing = pref_sentences[-1]
             trailing = re.sub(r'[:\-\—\s]+$', '', trailing).strip()
             clean_trailing = strip_leading_articles(trailing)
-            if 3 <= len(clean_trailing) <= 45:
+            if is_valid_concept_keyword(clean_trailing) and 3 <= len(clean_trailing) <= 65:
                 clean_def = text[0].upper() + text[1:] if text else ""
                 if not clean_def.endswith((".", "!", "?")) and clean_def:
                     clean_def += "."
                 return clean_trailing, clean_def, "tier2_prefix_trailing"
 
     # --- Tier 3: Structural Anchor (Zero 'this concept' Guarantee) ---
-    # Check if the entire text is a short term (1-5 words, <= 45 chars)
+    # Check if the entire text is a short term (1-5 words, <= 55 chars)
     words = text.split()
-    if 1 <= len(words) <= 5 and len(text) <= 45 and not text.endswith("."):
+    if 1 <= len(words) <= 5 and len(text) <= 55 and not text.endswith(".") and is_valid_concept_keyword(text):
         clean_term = strip_leading_articles(text)
         def_str = f"{clean_term} — core concept under {heading_context}."
         return clean_term, def_str, "tier3_short_term"
 
-    # First clause before punctuation
+    # First clause before punctuation if valid keyword
     first_clause = re.split(r'[,;:\(\)]', text)[0].strip()
     clause_words = first_clause.split()
-    if 1 <= len(clause_words) <= 5 and 3 <= len(first_clause) <= 45:
+    if 1 <= len(clause_words) <= 6 and 3 <= len(first_clause) <= 55 and is_valid_concept_keyword(first_clause):
         clean_term = strip_leading_articles(first_clause)
         clean_def = text[0].upper() + text[1:] if text else ""
         if not clean_def.endswith((".", "!", "?")) and clean_def:
@@ -902,6 +1219,7 @@ class SemanticCardParser:
 
         cards: List[Dict[str, Any]] = []
 
+
         # --------------------------------------------------------------------
         # Pattern A: Green Highlight (Definitions & Foundational Mechanisms)
         # --------------------------------------------------------------------
@@ -960,6 +1278,41 @@ class SemanticCardParser:
                     cards.append(cloze_candidate)
                     continue
 
+                # Check for interrogative / rhetorical question in clause (e.g. "What constitutes Abuse????? (not so simple)")
+                if is_interrogative_note(clause):
+                    paren_match = re.search(r'[\(\[](.*?)[\)\]]', clause)
+                    raw_q = re.sub(r'[\(\[].*?[\)\]]', '', clause).strip()
+                    raw_q = re.sub(r'\s*\?+', '', raw_q).strip()
+                    if raw_q:
+                        raw_q += '?'
+                    anchor_ctx = heading if heading and heading != "General" else "Core Principle"
+                    ans_text = ""
+                    if paren_match:
+                        ans_text = paren_match.group(1).strip()
+                    elif paragraph_prefix and not any(paragraph_prefix.lower().startswith(w) for w in ('what', 'why', 'how', 'when', 'where', 'who', 'which')):
+                        ans_text = paragraph_prefix.strip(" :-")
+                    elif context and context != heading:
+                        ans_text = context.strip()
+
+                    norm_q = re.sub(r'[^a-z0-9]', '', raw_q.lower())
+                    norm_a = re.sub(r'[^a-z0-9]', '', ans_text.lower()) if ans_text else ""
+                    if not ans_text or norm_q == norm_a or (norm_a in norm_q and len(norm_a) >= 8):
+                        ans_text = f"Key criteria, definition, and standards governing {anchor_ctx}."
+
+                    if not ans_text.endswith(('.', '!', '?')):
+                        ans_text += '.'
+                    cards.append({
+                        "card_type": "active_recall_qa",
+                        "keyword": anchor_ctx,
+                        "descriptor": ans_text,
+                        "question": f"Regarding <b>{anchor_ctx}</b>: {raw_q}",
+                        "answer": ans_text,
+                        "category_badge": "badge-important",
+                        "context": ctx_field,
+                        "tags": base_tags + ["high_yield"]
+                    })
+                    continue
+
                 # Otherwise, extract subject via multi-tier fallback
                 term, descriptor, tier = split_highlight_fallback(clause, paragraph_prefix, heading)
                 
@@ -977,7 +1330,7 @@ class SemanticCardParser:
                     mech_label = "key mechanism"
 
                 # If term is short and clean, create active recall question
-                if term and term != heading and term != "Key Principle":
+                if term and term != heading and term != "Key Principle" and is_valid_concept_keyword(term):
                     cards.append({
                         "card_type": "active_recall_qa",
                         "keyword": term,

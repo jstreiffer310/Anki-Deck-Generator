@@ -28,14 +28,40 @@ except ImportError:
         OllamaRuntimeManager = None
 
 try:
-    from scripts.semantic_parser import SemanticCardParser, clean_phrase as semantic_clean_phrase, is_valid_card
+    from scripts.semantic_parser import (
+        SemanticCardParser,
+        clean_phrase as semantic_clean_phrase,
+        is_valid_card,
+        is_valid_concept_keyword,
+        resolve_keyword_descriptor_pair,
+        DEFINITIONAL_FRAMING_REGEX,
+        CRITIQUE_ACTION_REGEX,
+        CRITIQUE_STANDALONE_WORDS,
+        is_interrogative_note,
+    )
 except ImportError:
     try:
-        from semantic_parser import SemanticCardParser, clean_phrase as semantic_clean_phrase, is_valid_card
+        from semantic_parser import (
+            SemanticCardParser,
+            clean_phrase as semantic_clean_phrase,
+            is_valid_card,
+            is_valid_concept_keyword,
+            resolve_keyword_descriptor_pair,
+            DEFINITIONAL_FRAMING_REGEX,
+            CRITIQUE_ACTION_REGEX,
+            CRITIQUE_STANDALONE_WORDS,
+            is_interrogative_note,
+        )
     except ImportError:
         SemanticCardParser = None
         semantic_clean_phrase = None
         is_valid_card = None
+        is_valid_concept_keyword = None
+        resolve_keyword_descriptor_pair = None
+        DEFINITIONAL_FRAMING_REGEX = None
+        CRITIQUE_ACTION_REGEX = None
+        CRITIQUE_STANDALONE_WORDS = None
+        is_interrogative_note = None
 
 # Google Docs API integration
 try:
@@ -422,6 +448,269 @@ def stitch_consecutive_highlights(structured_data: List[Dict[str, Any]]) -> List
             i += 1
     return stitched
 
+
+def extract_r_script_highlights(file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    """
+    Parses an R script (.R) or RMarkdown file (.Rmd) and extracts structured educational
+    highlights (yellow concept keywords / tasks, green definitions / code solutions)
+    grouped under appropriate topic headings for SuperMemo 20 Rules flashcard synthesis.
+    Extracts:
+    1. Headings (# Week..., # TOPIC..., ### ...)
+    2. Data Types & Concepts (Numeric, Integer, Logical, Character, Factor, Coercion, etc.)
+    3. Tasks & Code Solutions (#' **TASK: ...**)
+    4. Functions & Syntax (str(), view(), c(), getwd(), read.csv(), psych::describe(), etc.)
+    5. Indexing rules (ObjectName[row, col], ObjectName[row, ], ObjectName[, col], df$col, [-row, ])
+    6. dplyr verbs and pipes (mutate(), filter(), select(), %>%, |>)
+    """
+    p = Path(file_path)
+    if not p.exists():
+        raise FileNotFoundError(f"R script file not found at: {file_path}")
+
+    try:
+        content = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = p.read_text(encoding="latin-1", errors="ignore")
+
+    lines = content.splitlines()
+    structured_data: List[Dict[str, Any]] = []
+
+    current_heading = p.stem.replace("_", " ").replace("-", " ").strip()
+    heading_hierarchy = [current_heading]
+    seen_concepts: Set[str] = set()
+
+    # Core concept and syntax lookup dictionary for canonical definitions
+    CORE_R_CONCEPTS = {
+        "numeric": ("Numeric (dbl or num)", "Numbers with decimals and can include negative values. Used for continuous variables."),
+        "integer": ("Integer (int)", "Whole numbers without decimal parts. Used for discrete or ordinal variables."),
+        "logical": ("Logical (lgl)", "TRUE and FALSE boolean values. Used for binary variables and conditional filtering."),
+        "character": ("Character (chr)", "Values enclosed in quotation marks; text strings. Used for nominal variables."),
+        "factor": ("Factor (fct)", "Categorical variable storing discrete values mapped to underlying integer levels and descriptive labels."),
+        "coercion": ("Coercion in R", "When combining mixed types into a vector, R coerces all items to the most flexible type: logical -> integer -> numeric -> character."),
+        "working directory": ("Working Directory", "The specific directory location on your computer from which R reads and writes files (checked with getwd())."),
+        "project": ("RStudio Project", "A self-contained starting point for the working directory ensuring reproducible file paths across computers."),
+        "object": ("R Object", "A named container in memory used to store output, data, or values via the assignment operator (<-)."),
+        "functions": ("R Function", "Pre-made code routine that performs specific operations when evaluated with input arguments: function_name()."),
+        "packages": ("R Package", "Bundles of code, documentation, and sample data that extend R's capabilities (installed once, loaded via library())."),
+        "vectors": ("Vector (R)", "A sequence of values (numbers, words, etc.) of the SAME homogeneous data type, created with c()."),
+        "dataframe": ("Data Frame (R)", "A 2D tabular data structure where each column is a vector of uniform type and each row is an observation."),
+        "tibbles": ("Tibble (tidyverse)", "A modern tidyverse reimagining of data frames with cleaner console printing and stricter subsetting."),
+        "filtering": ("filter() (dplyr)", "Extracts rows from a data frame that meet specified logical conditions: filter(data, criteria)."),
+        "selecting": ("select() (dplyr)", "Extracts specific columns from a dataset by name or position: select(data, columns)."),
+        "creating a new variable": ("mutate() (dplyr)", "Manipulates existing columns to create or transform variables in a data frame: mutate(data, new_col = expression)."),
+        "pipes": ("Pipes (|> and %>%)", "Shorthand operators that pass the result of the left-hand expression into the first argument of the right-hand function."),
+    }
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            i += 1
+            continue
+
+        # 1. Heading Detection:
+        # Match '# Week...', '# TOPIC...', '### ...', or markdown headers in Rmd
+        if re.match(r'^#+\s*(?:Week|TOPIC|[0-9]+\.)\b', stripped, re.I) and not stripped.startswith("#'") and not stripped.startswith("####'"):
+            h_text = re.sub(r'^#+\s*', '', stripped).strip().strip('-: ')
+            if len(h_text) > 3 and not any(h_text.lower().startswith(x) for x in ('sum of', 'determine', 'extracting', 'first', 'both', 'useful', 'checking', 'loading', 'viewing')):
+                current_heading = h_text
+                if current_heading not in heading_hierarchy:
+                    heading_hierarchy.append(current_heading)
+            i += 1
+            continue
+
+        # 2. Interactive Task & Code Solution Extraction:
+        task_match = re.search(r'\*\*(?:TASK|EXERCISE):\s*(.*?)(?:\*\*|$)', stripped, re.I)
+        if task_match:
+            task_desc = task_match.group(1).strip().rstrip('*').strip()
+            # Check if task description continues on consecutive roxygen comment lines
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("#'") and "**" in lines[j]:
+                extra = re.search(r'\*\*(.*?)\*\*', lines[j])
+                if extra:
+                    extra_text = extra.group(1).strip()
+                    if not extra_text.lower().startswith("note:") and not extra_text.lower().startswith("hint:"):
+                        task_desc += " " + extra_text
+                j += 1
+
+            # Clean task_desc: remove trailing notes/hints
+            clean_task = re.sub(r'\s*(?:HINT|Note):.*$', '', task_desc, flags=re.I).strip()
+            clean_task = re.sub(r'\s+', ' ', clean_task).strip()
+
+            # Search forward for the code solution
+            code_lines = []
+            while j < len(lines):
+                sline = lines[j].strip()
+                if not sline:
+                    if code_lines:
+                        break
+                    j += 1
+                    continue
+                # If we encounter the next topic, task, or major section header, stop
+                if re.match(r'^#+\s+(?:Week|TOPIC|[0-9]+\.)\b', sline, re.I) or "**TASK" in sline or "**EXERCISE" in sline:
+                    break
+                if sline.startswith("#'") or sline.startswith("####'") or sline.startswith("#####"):
+                    # Check for inline output note like: What I did: *dat_name <- read.csv(...)*
+                    if "what i did:" in sline.lower() or "output:" in sline.lower():
+                        matches_code = re.findall(r'[*`]+([^*`]+)[*`]+', sline)
+                        if matches_code and not code_lines:
+                            code_lines.append(matches_code[0].strip())
+                    if code_lines:
+                        break
+                    j += 1
+                    continue
+                # Standard comment before code: skip unless we already gathered code
+                if sline.startswith("#"):
+                    if not code_lines:
+                        j += 1
+                        continue
+                    else:
+                        break
+                # Non-comment line -> Code line!
+                clean_code = re.sub(r'^[>+]\s*', '', sline).strip()
+                if clean_code:
+                    code_lines.append(clean_code)
+                j += 1
+                if len(code_lines) >= 1:
+                    if j < len(lines) and not lines[j].strip():
+                        break
+                    if len(code_lines) >= 4:
+                        break
+
+            if code_lines and clean_task:
+                code_solution = "\n".join(code_lines)
+                clean_prompt = clean_task[0].lower() + clean_task[1:] if clean_task else ""
+                clean_prompt = clean_prompt.rstrip('.')
+                q_text = f"In R ({current_heading}), how do you {clean_prompt}?"
+                ans_text = f"<code>{code_solution}</code>"
+
+                full_p = f"Task: {clean_task}\nSolution:\n{code_solution}"
+                structured_data.append({
+                    "heading": current_heading,
+                    "heading_hierarchy": list(heading_hierarchy),
+                    "full_paragraph": full_p,
+                    "is_r_task": True,
+                    "keyword": current_heading,
+                    "descriptor": clean_task,
+                    "question": q_text,
+                    "answer": ans_text,
+                    "segments": [
+                        {"raw_color": "yellow", "category": "yellow", "text": clean_task},
+                        {"raw_color": "green", "category": "green", "text": code_solution}
+                    ],
+                    "highlights": [
+                        {"raw_color": "yellow", "category": "yellow", "text": clean_task},
+                        {"raw_color": "green", "category": "green", "text": code_solution}
+                    ]
+                })
+                i = j
+                continue
+
+        # 3. Explicit Concept & Data Type Definitions:
+        # Pattern: #' <Concept/Data Type>: <Explanation>
+        concept_match = re.match(
+            r"^#'\s*(?:\*\s*)?([A-Za-z0-9_\s\(\)\-\$\>\<\=/\+]+?):\s*(.+)$",
+            stripped
+        )
+        if concept_match:
+            raw_term = concept_match.group(1).strip().strip('*_`').strip()
+            raw_def = concept_match.group(2).strip().strip('*_`').strip()
+
+            lower_term = raw_term.lower()
+            if (lower_term not in ("note", "notes", "example", "examples", "hint", "brainstorm", "format", "general format", "general formatting", "acknowledgement", "on ai", "tl;dr")
+                and len(raw_term.split()) <= 7
+                and len(raw_def) >= 10):
+
+                # Match against canonical definitions or use extracted text
+                matched_key = None
+                for ck in CORE_R_CONCEPTS:
+                    if ck in lower_term:
+                        matched_key = ck
+                        break
+
+                if matched_key:
+                    c_term, c_def = CORE_R_CONCEPTS[matched_key]
+                    if c_term not in seen_concepts:
+                        seen_concepts.add(c_term)
+                        full_p = f"{c_term}: {c_def}"
+                        structured_data.append({
+                            "heading": current_heading,
+                            "heading_hierarchy": list(heading_hierarchy),
+                            "full_paragraph": full_p,
+                            "segments": [
+                                {"raw_color": "yellow", "category": "yellow", "text": c_term},
+                                {"raw_color": "green", "category": "green", "text": c_def}
+                            ],
+                            "highlights": [
+                                {"raw_color": "yellow", "category": "yellow", "text": c_term},
+                                {"raw_color": "green", "category": "green", "text": c_def}
+                            ]
+                        })
+                elif raw_term not in seen_concepts:
+                    seen_concepts.add(raw_term)
+                    # Clean raw_def up to 25 words
+                    clean_d = " ".join(raw_def.split()[:25])
+                    if not clean_d.endswith(('.', '!', '?')):
+                        clean_d += '.'
+                    full_p = f"{raw_term}: {clean_d}"
+                    structured_data.append({
+                        "heading": current_heading,
+                        "heading_hierarchy": list(heading_hierarchy),
+                        "full_paragraph": full_p,
+                        "segments": [
+                            {"raw_color": "yellow", "category": "yellow", "text": raw_term},
+                            {"raw_color": "green", "category": "green", "text": clean_d}
+                        ],
+                        "highlights": [
+                            {"raw_color": "yellow", "category": "yellow", "text": raw_term},
+                            {"raw_color": "green", "category": "green", "text": clean_d}
+                        ]
+                    })
+
+        # 4. Canonical Syntax Rules Check in comment or code
+        SYNTAX_RULES = [
+            ("2D Matrix Indexing in R", r'ObjectName\[row#?,\s*column#?\]', "ObjectName[row, col] extracts a specific cell. ObjectName[row, ] extracts a row, and ObjectName[, col] extracts a column."),
+            ("$ Column Extraction Operator", r'ObjectName\$col_name|ObjectName\$column_name', "ObjectName$col_name extracts a single column as a vector from a data frame."),
+            ("Negative Indexing in R", r'ObjectName\[-row#?,\s*\]|ObjectName\[,\s*-col#?\]', "Prefixing a row or column index with a minus sign (e.g., df[-row, ] or df[, -col]) removes that row or column."),
+            ("c() Function", r'\bc\(\s*.*?\)', "c() concatenates or combines multiple values or elements into a single homogeneous vector."),
+            ("str() Function", r'\bstr\([a-zA-Z0-9_\.]+\)', "str() displays the internal structure, dimensions, and data types of an object or data frame."),
+            ("view() Function", r'\bview\([a-zA-Z0-9_\.]+\)', "view() displays the entire dataset as an interactive spreadsheet viewer in RStudio."),
+            ("getwd() Function", r'\bgetwd\(\)', "getwd() returns the current working directory path from which R reads and writes files."),
+            ("read.csv() Function", r'\bread\.csv\(', "read.csv() imports a comma-separated values (.csv) file into an R data frame."),
+            ("here() Function", r'\bhere\(', "here() builds file paths relative to the project root directory, enabling reproducible workflows."),
+            ("mutate() (dplyr)", r'\bmutate\(', "mutate() creates new variables or transforms existing variables in a data frame while preserving existing rows."),
+            ("filter() (dplyr)", r'\bfilter\(', "filter() extracts rows from a data frame that satisfy specified logical criteria."),
+            ("select() (dplyr)", r'\bselect\(', "select() subsets and extracts specific columns from a data frame by name or position."),
+            ("factor() Function", r'\bfactor\(', "factor() converts a variable to a categorical factor with specified levels and descriptive labels."),
+            ("Coercion in R", r'\bcoercion\b', "When combining elements of mixed types into a vector, R automatically coerces all items to the most flexible type: logical -> integer -> numeric -> character."),
+            ("Tibbles vs Data Frames", r'\b(as_tibble|as\.data\.frame)\(', "as_tibble() converts a data frame into a tidyverse tibble, and as.data.frame() converts a tibble back into a base data frame."),
+            ("Pipes (|> and %>%)", r'\|\>|\%\>\%', "Pipes chain commands by passing the left-hand result into the first argument of the right-hand function."),
+        ]
+
+        for s_term, s_regex, s_def in SYNTAX_RULES:
+            if re.search(s_regex, stripped, re.I) and s_term not in seen_concepts:
+                seen_concepts.add(s_term)
+                full_p = f"{s_term}: {s_def}"
+                structured_data.append({
+                    "heading": current_heading,
+                    "heading_hierarchy": list(heading_hierarchy),
+                    "full_paragraph": full_p,
+                    "segments": [
+                        {"raw_color": "yellow", "category": "yellow", "text": s_term},
+                        {"raw_color": "green", "category": "green", "text": s_def}
+                    ],
+                    "highlights": [
+                        {"raw_color": "yellow", "category": "yellow", "text": s_term},
+                        {"raw_color": "green", "category": "green", "text": s_def}
+                    ]
+                })
+
+        i += 1
+
+    return structured_data
+
+
 COURSE_DOMAIN_MAP = {
     "PSYC 3031": "statistics",
     "PSYC 2030": "statistics",
@@ -525,7 +814,7 @@ def detect_course_domain(
 
 def extract_highlights(source, classify_fn=None):
     """
-    Unified extractor accepting a local .docx file path, Google Docs URL, or Document ID.
+    Unified extractor accepting a local .docx file path, Google Docs URL, Document ID, or R script (.r, .rmd).
     
     Returns:
         tuple: (structured_data: list[dict], doc_title: Optional[str])
@@ -536,6 +825,13 @@ def extract_highlights(source, classify_fn=None):
             raise ImportError("Google Docs API client is not available. Ensure google-api-python-client is installed.")
         data, doc_title = extract_google_doc_structured(source, classify_fn=classify)
         return stitch_consecutive_highlights(data), doc_title
+    elif str(source).lower().endswith((".r", ".rmd")):
+        data = extract_r_script_highlights(source)
+        try:
+            doc_title = Path(source).stem
+        except Exception:
+            doc_title = None
+        return data, doc_title
     else:
         return extract_document_highlights(source), None
 
@@ -961,6 +1257,24 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
             })
             continue
 
+        # Pattern 0b: R Interactive Tasks
+        if item.get("is_r_task"):
+            q_text = item.get("question", "")
+            a_text = item.get("answer", "")
+            anchor_kw = item.get("keyword") or heading or "R Syntax"
+            cards.append({
+                "card_type": "active_recall_qa",
+                "taxonomy": "r_syntax",
+                "keyword": anchor_kw,
+                "descriptor": item.get("descriptor", ""),
+                "question": q_text,
+                "answer": a_text,
+                "category_badge": "badge-code",
+                "context": context_extra or heading,
+                "tags": list(dict.fromkeys(tags + ["statistics", "r_syntax", "programming"]))
+            })
+            continue
+
         # Pattern 1: Concept (Yellow) + Definition (Green)
         # Pair 1-to-1 by order of appearance to avoid Cartesian product explosion
         if yellows and greens:
@@ -970,14 +1284,123 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                 clean_g = clean_phrase(g_def)
                 if not clean_y or not clean_g:
                     continue
+
+                # Handle interrogative student questions paired with answers
+                is_y_interrogative = bool(is_interrogative_note and is_interrogative_note(clean_y))
+                is_g_interrogative = bool(is_interrogative_note and is_interrogative_note(clean_g))
+
+                if is_y_interrogative or is_g_interrogative:
+                    raw_q = clean_y if is_y_interrogative else clean_g
+                    raw_ans = clean_g if is_y_interrogative else clean_y
+
+                    # Clean extra ??? or bracketed hints from question prompt if any
+                    clean_q = re.sub(r'[\(\[].*?[\)\]]', '', raw_q).strip()
+                    clean_q = re.sub(r'\s*\?+', '', clean_q).strip()
+                    if clean_q:
+                        clean_q += '?'
+
+                    clean_ans = raw_ans[0].upper() + raw_ans[1:] if raw_ans else ""
+                    if not clean_ans.endswith(('.', '!', '?')) and clean_ans:
+                        clean_ans += '.'
+
+                    anchor_topic = heading if heading and heading != "General" else "Core Principle"
+                    if anchor_topic and not clean_q.lower().startswith("regarding"):
+                        q_text = f"Regarding <b>{anchor_topic}</b>: {clean_q}"
+                    else:
+                        q_text = clean_q
+
+                    cards.append({
+                        "card_type": "active_recall_qa",
+                        "keyword": anchor_topic,
+                        "descriptor": clean_ans,
+                        "question": q_text,
+                        "answer": clean_ans,
+                        "category_badge": "badge-important",
+                        "context": context_extra or heading,
+                        "tags": list(dict.fromkeys(tags + ["active_recall", "interrogative", "high_yield"]))
+                    })
+                    continue
+
+                # Card 55 Fix: Detect action verbs, theoretical critique phrases, or neither being a concept keyword
+                standalone_set = CRITIQUE_STANDALONE_WORDS if CRITIQUE_STANDALONE_WORDS else {
+                    'REJECT', 'REJECTS', 'CRITICIZE', 'CRITICIZES', 'CONTRAST', 'CONTRASTS', 'CHALLENGE', 'CHALLENGES', 'DISPROVE', 'DISPROVES', 'REFUTE', 'REFUTES'
+                }
+                is_y_critique = bool(CRITIQUE_ACTION_REGEX and CRITIQUE_ACTION_REGEX.search(clean_y)) or clean_y.upper() in standalone_set
+                is_g_critique = bool(CRITIQUE_ACTION_REGEX and CRITIQUE_ACTION_REGEX.search(clean_g)) or clean_g.upper() in standalone_set
+
+                v_y = is_valid_concept_keyword(clean_y) if is_valid_concept_keyword else True
+                v_g = is_valid_concept_keyword(clean_g) if is_valid_concept_keyword else True
+
+                if is_y_critique or is_g_critique:
+                    critique_verb = clean_y if is_y_critique else clean_g
+                    substantive = clean_g if is_y_critique else clean_y
+                    anchor_topic = heading if heading and heading != "General" else "Key Principle"
+                    if substantive.lower().startswith(critique_verb.lower()):
+                        ans_text = substantive
+                    else:
+                        ans_text = f"{critique_verb.capitalize()} {substantive}"
+                    if not ans_text.endswith(('.', '!', '?')):
+                        ans_text += '.'
+                    cards.append({
+                        "card_type": "active_recall_qa",
+                        "keyword": anchor_topic,
+                        "descriptor": ans_text,
+                        "question": f"Regarding <b>{anchor_topic}</b>, what critique or theoretical counterargument is presented?",
+                        "answer": ans_text,
+                        "category_badge": "badge-important",
+                        "context": context_extra or heading,
+                        "tags": list(dict.fromkeys(tags + ["critique", "active_recall", "high_yield"]))
+                    })
+                    continue
+
+                if not v_y and not v_g:
+                    anchor_topic = heading if heading and heading != "General" else "Key Principle"
+                    clean_d = clean_g[0].upper() + clean_g[1:] if clean_g else ""
+                    if not clean_d.endswith(('.', '!', '?')):
+                        clean_d += '.'
+                    cards.append({
+                        "card_type": "bidirectional_definition",
+                        "taxonomy": "term_definition",
+                        "keyword": anchor_topic,
+                        "descriptor": clean_d,
+                        "question": f"What is the definition of <b>{anchor_topic}</b>?",
+                        "answer": clean_d,
+                        "category_badge": "badge-definition",
+                        "context": context_extra or heading,
+                        "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
+                    })
+                    cards.append({
+                        "card_type": "bidirectional_definition",
+                        "taxonomy": "term_definition",
+                        "keyword": anchor_topic,
+                        "descriptor": clean_d,
+                        "question": f"What term is defined by:<br><i>{clean_d}</i>",
+                        "answer": anchor_topic,
+                        "category_badge": "badge-definition",
+                        "context": context_extra or heading,
+                        "tags": list(dict.fromkeys(tags + ["definition", "reverse"]))
+                    })
+                    continue
+
+                # Smart Keyword-Descriptor Resolution: dynamically resolve roles & swap inverted cards
+                if resolve_keyword_descriptor_pair:
+                    resolved_kw, resolved_desc = resolve_keyword_descriptor_pair(
+                        clean_y, clean_g, term_color="yellow", def_color="green"
+                    )
+                else:
+                    resolved_kw, resolved_desc = clean_y, clean_g
+
+                if not resolved_kw or not resolved_desc:
+                    continue
+
                 # Card 1: Forward (Recall: Term -> Definition)
                 cards.append({
                     "card_type": "bidirectional_definition",
                     "taxonomy": "term_definition",
-                    "keyword": clean_y,
-                    "descriptor": clean_g,
-                    "question": f"What is the definition of <b>{clean_y}</b>?",
-                    "answer": clean_g,
+                    "keyword": resolved_kw,
+                    "descriptor": resolved_desc,
+                    "question": f"What is the definition of <b>{resolved_kw}</b>?",
+                    "answer": resolved_desc,
                     "category_badge": "badge-definition",
                     "context": context_extra or heading,
                     "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
@@ -986,10 +1409,10 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                 cards.append({
                     "card_type": "bidirectional_definition",
                     "taxonomy": "term_definition",
-                    "keyword": clean_y,
-                    "descriptor": clean_g,
-                    "question": f"What term is defined by:<br><i>{clean_g}</i>",
-                    "answer": clean_y,
+                    "keyword": resolved_kw,
+                    "descriptor": resolved_desc,
+                    "question": f"What term is defined by:<br><i>{resolved_desc}</i>",
+                    "answer": resolved_kw,
                     "category_badge": "badge-definition",
                     "context": context_extra or heading,
                     "tags": list(dict.fromkeys(tags + ["definition", "reverse"]))
@@ -1013,17 +1436,35 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                             c["context"] = context_extra
                         cards.append(c)
                 else:
-                    term = clean_phrase(y_rem)
-                    cards.append({
-                        "card_type": "active_recall_qa",
-                        "keyword": term,
-                        "descriptor": term,
-                        "question": f"What is the key mechanism regarding <b>{term}</b>?",
-                        "answer": term,
-                        "category_badge": "badge-important",
-                        "context": context_extra or heading,
-                        "tags": list(dict.fromkeys(tags + ["high_yield"]))
-                    })
+                    clean_y = clean_phrase(y_rem)
+                    if "?" in clean_y or any(clean_y.lower().startswith(q) for q in ("what ", "why ", "how ", "when ", "where ", "who ", "which ")):
+                        raw_q = re.sub(r'[\(\[].*?[\)\]]', '', clean_y).strip()
+                        raw_q = re.sub(r'\s*\?+', '', raw_q).strip()
+                        if raw_q:
+                            raw_q += '?'
+                        anchor = heading if heading and heading != "General" else "Core Principle"
+                        ans_text = f"Key criteria and standards governing {anchor}."
+                        cards.append({
+                            "card_type": "active_recall_qa",
+                            "keyword": anchor,
+                            "descriptor": ans_text,
+                            "question": f"Regarding <b>{anchor}</b>: {raw_q}",
+                            "answer": ans_text,
+                            "category_badge": "badge-important",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["high_yield"]))
+                        })
+                    else:
+                        cards.append({
+                            "card_type": "active_recall_qa",
+                            "keyword": heading,
+                            "descriptor": clean_y,
+                            "question": f"What is the key mechanism regarding <b>{heading}</b>?",
+                            "answer": clean_y,
+                            "category_badge": "badge-important",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["high_yield"]))
+                        })
 
             # Surplus greens beyond paired yellows
             for g_rem in greens[len(yellows):]:
@@ -1079,16 +1520,26 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                     if prefix:
                         subject_match = re.search(r'([A-Z][a-zA-Z0-9\s\(\)-]{2,40})(?:\s+is|\s+represents|\s+refers to|:)', prefix)
                         if subject_match:
-                            subject = subject_match.group(1).strip()
+                            candidate_s = subject_match.group(1).strip()
+                            if is_valid_concept_keyword and is_valid_concept_keyword(candidate_s):
+                                subject = candidate_s
                         else:
                             clean_pref = prefix.strip(':-., ')
                             if len(clean_pref) > 3:
-                                subject = clean_pref[-40:].strip()
-                    if not subject:
+                                candidate_s = clean_pref[-40:].strip()
+                                if is_valid_concept_keyword and is_valid_concept_keyword(candidate_s):
+                                    subject = candidate_s
+
+                    # Apply DEFINITIONAL_FRAMING_REGEX bypass (Card 138 fix)
+                    is_framing = bool(DEFINITIONAL_FRAMING_REGEX and DEFINITIONAL_FRAMING_REGEX.match(clean_g))
+                    if not subject and not is_framing:
                         internal_match = re.search(r'^([A-Z][a-zA-Z0-9\s\(\)\'-]{2,50})(?:\s+is|\s+are|\s+focuses on|\s+represents|\s+refers to|\s+means|\s+involves|:)\s+(.*)', clean_g, re.IGNORECASE)
                         if internal_match:
-                            subject = internal_match.group(1).strip()
-                            clean_g = internal_match.group(2).strip()
+                            candidate_s = internal_match.group(1).strip()
+                            if is_valid_concept_keyword and is_valid_concept_keyword(candidate_s):
+                                subject = candidate_s
+                                clean_g = internal_match.group(2).strip()
+
                     if not subject:
                         if heading and heading != "General" and not heading.lower().startswith("four principles"):
                             subject = heading
@@ -1139,16 +1590,34 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                         cards.append(c)
                 else:
                     clean_y = clean_phrase(y_fact)
-                    cards.append({
-                        "card_type": "active_recall_qa",
-                        "keyword": heading,
-                        "descriptor": clean_y,
-                        "question": f"What is the key mechanism regarding <b>{heading}</b>?",
-                        "answer": clean_y,
-                        "category_badge": "badge-important",
-                        "context": context_extra or heading,
-                        "tags": list(dict.fromkeys(tags + ["high_yield"]))
-                    })
+                    if "?" in clean_y or any(clean_y.lower().startswith(q) for q in ("what ", "why ", "how ", "when ", "where ", "who ", "which ")):
+                        raw_q = re.sub(r'[\(\[].*?[\)\]]', '', clean_y).strip()
+                        raw_q = re.sub(r'\s*\?+', '', raw_q).strip()
+                        if raw_q:
+                            raw_q += '?'
+                        anchor = heading if heading and heading != "General" else "Core Principle"
+                        ans_text = f"Key criteria and standards governing {anchor}."
+                        cards.append({
+                            "card_type": "active_recall_qa",
+                            "keyword": anchor,
+                            "descriptor": ans_text,
+                            "question": f"Regarding <b>{anchor}</b>: {raw_q}",
+                            "answer": ans_text,
+                            "category_badge": "badge-important",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["high_yield"]))
+                        })
+                    else:
+                        cards.append({
+                            "card_type": "active_recall_qa",
+                            "keyword": heading,
+                            "descriptor": clean_y,
+                            "question": f"What is the key mechanism regarding <b>{heading}</b>?",
+                            "answer": clean_y,
+                            "category_badge": "badge-important",
+                            "context": context_extra or heading,
+                            "tags": list(dict.fromkeys(tags + ["high_yield"]))
+                        })
 
         # Pattern 4: Other highlights (Contextual / Secondary)
         elif others:
@@ -1411,6 +1880,13 @@ def process_source_and_generate(
         if extract_google_doc_structured is None:
             raise ImportError("Google Docs API client is not available. Ensure google-api-python-client is installed.")
         data, doc_title = extract_google_doc_structured(source, classify_fn=classify_color)
+    elif str(source).lower().endswith((".r", ".rmd")):
+        print(f"Extracting highlights from R script: {source}")
+        data = extract_r_script_highlights(source)
+        try:
+            doc_title = Path(source).stem
+        except Exception:
+            doc_title = None
     else:
         print(f"Extracting highlights from: {source}")
         data = extract_document_highlights(source)

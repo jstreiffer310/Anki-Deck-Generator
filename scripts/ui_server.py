@@ -134,7 +134,7 @@ def discover_classes_and_notes() -> list:
                 if not item.is_file():
                     continue
                 ext = item.suffix.lower()
-                if ext in (".docx", ".gdoc"):
+                if ext in (".docx", ".gdoc", ".r", ".rmd"):
                     name_lower = item.name.lower()
                     if name_lower.startswith("~$"):
                         continue
@@ -147,7 +147,7 @@ def discover_classes_and_notes() -> list:
                         "rel_path": str(item.relative_to(p)),
                         "ext": ext,
                         "is_syllabus": is_syllabus,
-                        "size_bytes": item.stat().st_size if ext == ".docx" else 0
+                        "size_bytes": item.stat().st_size if ext in (".docx", ".r", ".rmd") else 0
                     })
         except Exception as e:
             logger.error(f"Error scanning folder {p}: {e}")
