@@ -300,6 +300,10 @@
     }
     .badge-def { background: #064e22; color: #a7f3d0; border: 1px solid #10b981; }
     .badge-yield { background: #6e3c00; color: #fde68a; border: 1px solid #f59e0b; }
+    .badge-test { background: #1e3a8a; color: #93c5fd; border: 1px solid #3b82f6; }
+    .badge-formula { background: #581c87; color: #d8b4fe; border: 1px solid #a855f7; }
+    .badge-code { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+    .badge-assumption { background: #78350f; color: #fde68a; border: 1px solid #f59e0b; }
 
     .q-text { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
     .a-text { font-size: 14px; color: #cbd5e1; border-top: 1px dashed #334155; padding-top: 8px; }
@@ -507,6 +511,9 @@
 
           const notesCount = c.documents.filter(d => !d.is_syllabus).length;
           const decksCount = c.existing_decks.length;
+          const domainBadge = (c.domain && c.domain !== 'general')
+            ? `<span class="course-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); text-transform: uppercase;">${c.domain.replace('_', ' ')}</span>`
+            : '';
 
           item.innerHTML = `
             <div>
@@ -514,6 +521,7 @@
               <div class="course-name">${c.course_title}</div>
             </div>
             <div style="display: flex; gap: 6px; align-items: center;">
+              ${domainBadge}
               <span class="course-badge">${notesCount} Notes</span>
               ${decksCount > 0 ? `<span class="course-badge" style="background: var(--green-bg); color: #4ade80; border: 1px solid var(--green-border);">✓ Deck Active</span>` : ''}
             </div>
@@ -549,31 +557,47 @@
         c.documents.forEach(d => {
           const opt = document.createElement('option');
           opt.value = d.path;
-          opt.innerText = `${d.is_syllabus ? '[Syllabus] ' : ''}${d.rel_path} (${(d.size_bytes / 1024).toFixed(0)} KB)`;
+          opt.innerText = `${d.is_syllabus ? '[Syllabus] ' : ''}${d.rel_path} (${(d.size_bytes / 1024).toFixed(1)} KB)`;
+          if (!d.is_syllabus && sel.selectedIndex === -1) {
+            opt.selected = true;
+          }
           sel.appendChild(opt);
         });
       }
 
-      // Populate Google Doc URL if saved
-      document.getElementById('inputGDocUrl').value = c.saved_gdoc_url || '';
-    }
-
-    function setMode(mode) {
-      currentMode = mode;
-      document.getElementById('modeFile').className = `radio-btn ${mode === 'file' ? 'active' : ''}`;
-      document.getElementById('modeGDoc').className = `radio-btn ${mode === 'gdoc' ? 'active' : ''}`;
-      document.getElementById('fileGroup').style.display = mode === 'file' ? 'block' : 'none';
-      document.getElementById('gdocGroup').style.display = mode === 'gdoc' ? 'block' : 'none';
-    }
-
-    async function openSelectedFolder() {
-      if (selectedCourse) {
-        await fetch('/api/open_folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: selectedCourse.folder_path })
-        });
+      // Populate saved Google Doc link if available
+      const gdocInput = document.getElementById('inputGDocUrl');
+      if (c.saved_gdoc_url) {
+        gdocInput.value = c.saved_gdoc_url;
+      } else {
+        gdocInput.value = '';
       }
+
+      // Hide previous preview
+      document.getElementById('previewContainer').style.display = 'none';
+    }
+
+    function setInputMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('active'));
+      if (mode === 'file') {
+        document.getElementById('modeFileBtn').classList.add('active');
+        document.getElementById('fileInputGroup').style.display = 'block';
+        document.getElementById('gdocInputGroup').style.display = 'none';
+      } else {
+        document.getElementById('modeGDocBtn').classList.add('active');
+        document.getElementById('fileInputGroup').style.display = 'none';
+        document.getElementById('gdocInputGroup').style.display = 'block';
+      }
+    }
+
+    async function openCourseFolder() {
+      if (!selectedCourse) return;
+      await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: selectedCourse.folder_path })
+      });
     }
 
     async function openDecksFolder() {
@@ -620,6 +644,7 @@
           source: source,
           course_code: selectedCourse.course_code,
           course_name: selectedCourse.course_title,
+          domain: selectedCourse.domain,
           auto_inject: document.getElementById('checkAutoInject').checked
         };
 
@@ -665,8 +690,13 @@
       cList.innerHTML = '';
 
       data.cards.forEach((c, i) => {
-        const isYield = c.badge.includes('important');
-        const badgeClass = isYield ? 'badge-yield' : 'badge-def';
+        let badgeClass = 'badge-def';
+        const b = (c.badge || '').toLowerCase();
+        if (b.includes('test')) badgeClass = 'badge-test';
+        else if (b.includes('formula')) badgeClass = 'badge-formula';
+        else if (b.includes('code')) badgeClass = 'badge-code';
+        else if (b.includes('assumption')) badgeClass = 'badge-assumption';
+        else if (b.includes('important')) badgeClass = 'badge-yield';
 
         const cardEl = document.createElement('div');
         cardEl.className = 'card-preview';

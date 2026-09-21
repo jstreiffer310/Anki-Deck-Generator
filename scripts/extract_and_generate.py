@@ -422,6 +422,107 @@ def stitch_consecutive_highlights(structured_data: List[Dict[str, Any]]) -> List
             i += 1
     return stitched
 
+COURSE_DOMAIN_MAP = {
+    "PSYC 3031": "statistics",
+    "PSYC 2030": "statistics",
+    "PSYC 3590": "pharmacology",
+    "PSYC 2110": "developmental_psychology",
+    "PSYC 3000": "professionalism",
+    "PSYC 3250": "neuroscience",
+    "PSYC 3250M": "neuroscience",
+    "PSYC 2240": "neuroscience",
+    "PSYC 2260": "cognition",
+}
+
+DOMAIN_PATTERNS = {
+    "statistics": [
+        r'\b(?:statistics|stats|psyc\s*3031|psyc\s*2030|anova|regression|hypothesis testing|null hypothesis|p-value|degrees of freedom|type i error|type ii error|homoscedasticity|sphericity|levene|shapiro|welch|t-test|r script|dplyr|ggplot|tibble)\b'
+    ],
+    "pharmacology": [
+        r'\b(?:drug|pharmacology|psyc\s*3590|pharmacokinetics|pharmacodynamics|receptor|agonist|antagonist|half-life|neurotransmitter|ed50|ld50|bioavailability|psychoactive)\b'
+    ],
+    "developmental_psychology": [
+        r'\b(?:piaget|erikson|psyc\s*2110|developmental|sensorimotor|preoperational|concrete operational|formal operational|vygotsky|attachment theory|scaffolding|infancy|adolescence|developmental stage)\b'
+    ],
+    "professionalism": [
+        r'\b(?:ethics|cpa code|psyc\s*3000|professionalism|confidentiality|informed consent|dual relationship|competence|professional boundaries)\b'
+    ]
+}
+
+def detect_course_domain(
+    source: Any,
+    explicit_class: Optional[str] = None,
+    doc_title: Optional[str] = None,
+    heading_hierarchy: Optional[Union[List[str], str]] = None,
+    text_sample: Optional[Union[List[str], str]] = None
+) -> str:
+    """
+    Detects the academic domain (e.g. 'statistics', 'pharmacology', 'developmental_psychology',
+    'professionalism', or 'general') across folder paths, Google Doc titles, headings, or content samples.
+    """
+    course_regex = re.compile(r'([A-Z]{2,4}\s*\d{4}[A-Za-z]?)', re.IGNORECASE)
+
+    # 1. Check explicit class argument
+    if explicit_class:
+        m = course_regex.search(explicit_class)
+        if m:
+            normalized_code = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', m.group(1).upper())
+            if normalized_code in COURSE_DOMAIN_MAP:
+                return COURSE_DOMAIN_MAP[normalized_code]
+        clean_exp = explicit_class.lower()
+        for domain, patterns in DOMAIN_PATTERNS.items():
+            if any(re.search(p, clean_exp, re.I) for p in patterns):
+                return domain
+
+    # 2. Check doc_title if available
+    if doc_title:
+        m = course_regex.search(doc_title)
+        if m:
+            normalized_code = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', m.group(1).upper())
+            if normalized_code in COURSE_DOMAIN_MAP:
+                return COURSE_DOMAIN_MAP[normalized_code]
+        clean_dt = doc_title.lower()
+        for domain, patterns in DOMAIN_PATTERNS.items():
+            if any(re.search(p, clean_dt, re.I) for p in patterns):
+                return domain
+
+    # 3. Check heading hierarchy
+    if heading_hierarchy:
+        headings = heading_hierarchy if isinstance(heading_hierarchy, list) else [str(heading_hierarchy)]
+        for h in headings:
+            m = course_regex.search(h)
+            if m:
+                normalized_code = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', m.group(1).upper())
+                if normalized_code in COURSE_DOMAIN_MAP:
+                    return COURSE_DOMAIN_MAP[normalized_code]
+            clean_h = h.lower()
+            for domain, patterns in DOMAIN_PATTERNS.items():
+                if any(re.search(p, clean_h, re.I) for p in patterns):
+                    return domain
+
+    # 4. Check source string (file path, directory path, or URL)
+    if source:
+        source_str = str(source)
+        m = course_regex.search(source_str)
+        if m:
+            normalized_code = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', m.group(1).upper())
+            if normalized_code in COURSE_DOMAIN_MAP:
+                return COURSE_DOMAIN_MAP[normalized_code]
+        clean_src = source_str.lower()
+        for domain, patterns in DOMAIN_PATTERNS.items():
+            if any(re.search(p, clean_src, re.I) for p in patterns):
+                return domain
+
+    # 5. Check text sample if provided
+    if text_sample:
+        sample_str = " ".join(text_sample) if isinstance(text_sample, list) else str(text_sample)
+        clean_sample = sample_str.lower()
+        for domain, patterns in DOMAIN_PATTERNS.items():
+            if any(re.search(p, clean_sample, re.I) for p in patterns):
+                return domain
+
+    return "general"
+
 def extract_highlights(source, classify_fn=None):
     """
     Unified extractor accepting a local .docx file path, Google Docs URL, or Document ID.
@@ -559,7 +660,109 @@ li {
 .nightMode hr#answer {
     border-top-color: #374151;
 }
+
+/* Quantitative, Math & Code Styling */
+code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.9em;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+}
+
+pre {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 14px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 15px;
+    line-height: 1.45;
+    border-left: 4px solid #38bdf8;
+    margin: 12px 0;
+}
+
+pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    border: none;
+    font-size: 1em;
+}
+
+.nightMode code {
+    background-color: #1e293b;
+    color: #38bdf8;
+    border-color: #334155;
+}
+
+.nightMode pre {
+    background-color: #020617;
+    color: #e2e8f0;
+    border-left-color: #0284c7;
+}
+
+/* Domain Category Badges */
+.badge-test {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border-color: #1e40af;
+    font-size: 0;
+}
+.badge-test::after { content: "TEST SELECTION"; font-size: 12px; }
+
+.badge-formula {
+    background-color: #faf5ff;
+    color: #6b21a8;
+    border-color: #6b21a8;
+    font-size: 0;
+}
+.badge-formula::after { content: "FORMULA"; font-size: 12px; }
+
+.badge-code {
+    background-color: #ecfdf5;
+    color: #065f46;
+    border-color: #065f46;
+    font-size: 0;
+}
+.badge-code::after { content: "R SYNTAX"; font-size: 12px; }
+
+.badge-assumption {
+    background-color: #fffbeb;
+    color: #92400e;
+    border-color: #92400e;
+    font-size: 0;
+}
+.badge-assumption::after { content: "ASSUMPTION"; font-size: 12px; }
 """
+
+MATHJAX_SCRIPT = '''
+<script>
+window.MathJax = window.MathJax || {};
+window.MathJax.tex = {
+    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+    displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+    processEscapes: true
+};
+if (typeof MathJax !== 'undefined') {
+    if (MathJax.Hub) {
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+                processEscapes: true
+            }
+        });
+        MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+    } else if (MathJax.typesetPromise) {
+        MathJax.typesetPromise();
+    }
+}
+</script>
+'''
 
 ANKI_MODEL = genanki.Model(
     1847291038,
@@ -573,15 +776,17 @@ ANKI_MODEL = genanki.Model(
     templates=[
         {
             'name': 'Active Recall Card',
-            'qfmt': '''
-                {{#CategoryBadge}}<div class="badge {{CategoryBadge}}">{{CategoryBadge}}</div>{{/CategoryBadge}}
-                <div class="question">{{Question}}</div>
+            'qfmt': f'''
+                {{{{#CategoryBadge}}}}<div class="badge {{{{CategoryBadge}}}}">{{{{CategoryBadge}}}}</div>{{{{/CategoryBadge}}}}
+                <div class="question">{{{{Question}}}}</div>
+                {MATHJAX_SCRIPT}
             ''',
-            'afmt': '''
-                {{FrontSide}}
+            'afmt': f'''
+                {{{{FrontSide}}}}
                 <hr id="answer">
-                <div class="answer">{{Answer}}</div>
-                {{#Context}}<div class="context-box">{{Context}}</div>{{/Context}}
+                <div class="answer">{{{{Answer}}}}</div>
+                {{{{#Context}}}}<div class="context-box">{{{{Context}}}}</div>{{{{/Context}}}}
+                {MATHJAX_SCRIPT}
             ''',
         },
     ],
@@ -600,16 +805,18 @@ ANKI_CLOZE_MODEL = genanki.Model(
     templates=[
         {
             'name': 'Cloze',
-            'qfmt': '''
-                {{#CategoryBadge}}<div class="badge {{CategoryBadge}}">{{CategoryBadge}}</div>{{/CategoryBadge}}
-                <div class="question">{{cloze:Text}}</div>
+            'qfmt': f'''
+                {{{{#CategoryBadge}}}}<div class="badge {{{{CategoryBadge}}}}">{{{{CategoryBadge}}}}</div>{{{{/CategoryBadge}}}}
+                <div class="question">{{{{cloze:Text}}}}</div>
+                {MATHJAX_SCRIPT}
             ''',
-            'afmt': '''
-                {{#CategoryBadge}}<div class="badge {{CategoryBadge}}">{{CategoryBadge}}</div>{{/CategoryBadge}}
-                <div class="question">{{cloze:Text}}</div>
+            'afmt': f'''
+                {{{{#CategoryBadge}}}}<div class="badge {{{{CategoryBadge}}}}">{{{{CategoryBadge}}}}</div>{{{{/CategoryBadge}}}}
+                <div class="question">{{{{cloze:Text}}}}</div>
                 <hr id="answer">
-                {{#Extra}}<div class="answer">{{Extra}}</div>{{/Extra}}
-                {{#Context}}<div class="context-box">{{Context}}</div>{{/Context}}
+                {{{{#Extra}}}}<div class="answer">{{{{Extra}}}}</div>{{{{/Extra}}}}
+                {{{{#Context}}}}<div class="context-box">{{{{Context}}}}</div>{{{{/Context}}}}
+                {MATHJAX_SCRIPT}
             ''',
         },
     ],
@@ -692,13 +899,14 @@ def clean_phrase(text):
     t = re.sub(r'\s+', ' ', t).strip()
     return t.rstrip(':-–— \t')
 
-def synthesize_cards(structured_data, deck_tags=None, parser=None):
+def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str = "general"):
     """
     Transforms extracted highlights into atomic recall flashcards based on
     SuperMemo's 20 Rules and ANKI_SOP Keyword-Descriptor standards:
     - Green = Definition / Foundational Mechanism
     - Yellow = Important (Concept / Takeaway / Threshold)
     - Other = Context / Nuance
+    Supports subject-aware domain specialization (statistics, pharmacology, developmental psychology, etc.).
     """
     cards = []
     if deck_tags is None:
@@ -712,6 +920,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
         heading = item.get("heading", "General")
         full_p = item.get("full_paragraph", "")
         tags = list(deck_tags)
+        if domain and domain != "general" and domain not in tags:
+            tags.append(domain)
         if heading and heading != "General":
             clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', heading.replace(" ", "_"))[:30]
             if clean_tag:
@@ -763,6 +973,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                 # Card 1: Forward (Recall: Term -> Definition)
                 cards.append({
                     "card_type": "bidirectional_definition",
+                    "taxonomy": "term_definition",
                     "keyword": clean_y,
                     "descriptor": clean_g,
                     "question": f"What is the definition of <b>{clean_y}</b>?",
@@ -774,6 +985,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                 # Card 2: Reverse (Recognition: Definition -> Term)
                 cards.append({
                     "card_type": "bidirectional_definition",
+                    "taxonomy": "term_definition",
                     "keyword": clean_y,
                     "descriptor": clean_g,
                     "question": f"What term is defined by:<br><i>{clean_g}</i>",
@@ -792,7 +1004,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         highlight_color="yellow",
                         heading=heading,
                         context=context_extra,
-                        paragraph_prefix=prefix
+                        paragraph_prefix=prefix,
+                        domain=domain
                     )
                     for c in generated:
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
@@ -821,7 +1034,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         highlight_color="green",
                         heading=heading,
                         context=context_extra,
-                        paragraph_prefix=prefix
+                        paragraph_prefix=prefix,
+                        domain=domain
                     )
                     for c in generated:
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
@@ -851,7 +1065,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         highlight_color="green",
                         heading=heading,
                         context=context_extra,
-                        paragraph_prefix=prefix
+                        paragraph_prefix=prefix,
+                        domain=domain
                     )
                     for c in generated:
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
@@ -883,6 +1098,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                     if subject and clean_g and clean_g.strip():
                         cards.append({
                             "card_type": "bidirectional_definition",
+                            "taxonomy": "term_definition",
                             "keyword": subject,
                             "descriptor": clean_g,
                             "question": f"What is the definition of <b>{subject}</b>?",
@@ -893,6 +1109,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         })
                         cards.append({
                             "card_type": "bidirectional_definition",
+                            "taxonomy": "term_definition",
                             "keyword": subject,
                             "descriptor": clean_g,
                             "question": f"What term is defined by:<br><i>{clean_g}</i>",
@@ -912,7 +1129,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         highlight_color="yellow",
                         heading=heading,
                         context=context_extra,
-                        paragraph_prefix=prefix
+                        paragraph_prefix=prefix,
+                        domain=domain
                     )
                     for c in generated:
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
@@ -942,7 +1160,8 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
                         highlight_color="other",
                         heading=heading,
                         context=context_extra,
-                        paragraph_prefix=prefix
+                        paragraph_prefix=prefix,
+                        domain=domain
                     )
                     for c in generated:
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
@@ -962,7 +1181,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None):
         if classify_cognitive_taxonomy is not None and "taxonomy" not in c:
             kw = c.get("keyword", "")
             desc = c.get("descriptor", "")
-            c["taxonomy"] = classify_cognitive_taxonomy(kw, desc, context=c.get("context", ""))
+            c["taxonomy"] = classify_cognitive_taxonomy(kw, desc, context=c.get("context", ""), domain=domain)
         validated_cards.append(c)
 
     if remove_duplicate_cards is not None:
@@ -1176,12 +1395,13 @@ def process_source_and_generate(
     explicit_class: Optional[str] = None,
     explicit_chapter: Optional[str] = None,
     deck_tags: Optional[List[str]] = None,
-    auto_inject: bool = True
+    auto_inject: bool = True,
+    domain: Optional[str] = None
 ) -> Tuple[Path, str, List[Dict[str, Any]]]:
     """
     Unified ingestion and generation pipeline for Google Docs (URL or ID) or local .docx.
-    Extracts title, headings, and highlights, resolves deck name, synthesizes cards,
-    compiles .apkg package, and optionally injects via AnkiConnect.
+    Extracts title, headings, and highlights, resolves deck name, detects domain,
+    synthesizes cards, compiles .apkg package, and optionally injects via AnkiConnect.
 
     Returns:
         (out_apkg_path, deck_title, cards)
@@ -1208,6 +1428,16 @@ def process_source_and_generate(
             collected_headings.append(item["heading"])
     heading_hierarchy = collected_headings if collected_headings else [item.get("heading") for item in data if item.get("heading") and item["heading"] != "General"]
 
+    # Domain auto-detection
+    detected_domain = domain or detect_course_domain(
+        source=source,
+        explicit_class=explicit_class,
+        doc_title=doc_title,
+        heading_hierarchy=heading_hierarchy,
+        text_sample=[item.get("full_paragraph", "") for item in data[:5]]
+    )
+    print(f"Detected Course Domain: '{detected_domain.upper()}'")
+
     if deck:
         deck_title = deck
         safe_filename = re.sub(r'[^a-zA-Z0-9_\-]', '_', deck_title) + ".apkg"
@@ -1225,7 +1455,7 @@ def process_source_and_generate(
     print(f"Output File: '{safe_filename}'")
 
     tags = deck_tags if deck_tags is not None else ["lecture_notes"]
-    cards = synthesize_cards(data, deck_tags=tags)
+    cards = synthesize_cards(data, deck_tags=tags, domain=detected_domain)
     print(f"Synthesized {len(cards)} atomic flashcards.")
 
     for i, c in enumerate(cards, 1):
@@ -1250,6 +1480,7 @@ if __name__ == "__main__":
     parser.add_argument("--deck", help="Explicit deck title (overrides automatic naming)")
     parser.add_argument("--class-name", dest="explicit_class", help="Explicit class code/name (e.g., 'PSYC 3590')")
     parser.add_argument("--chapter", dest="explicit_chapter", help="Explicit chapter/lecture title")
+    parser.add_argument("--domain", choices=["statistics", "pharmacology", "developmental_psychology", "professionalism", "neuroscience", "cognition", "general"], help="Explicitly specify course domain")
     parser.add_argument("--init-ollama", action="store_true", help="Auto-start Docker / Ollama container if offline")
     parser.add_argument("--no-inject", action="store_true", help="Skip auto-injection into Anki via AnkiConnect")
     args = parser.parse_args()
@@ -1267,7 +1498,8 @@ if __name__ == "__main__":
         explicit_class=args.explicit_class,
         explicit_chapter=args.explicit_chapter,
         deck_tags=["lecture_notes"],
-        auto_inject=not getattr(args, "no_inject", False)
+        auto_inject=not getattr(args, "no_inject", False),
+        domain=args.domain
     )
 
 

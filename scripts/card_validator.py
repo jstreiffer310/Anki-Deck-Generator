@@ -12,11 +12,47 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class ContentShield:
+    """Isolates math blocks ($$, $, \\[, \\() and code blocks (```, `) using unique placeholder tokens."""
+
+    SHIELD_PATTERNS = [
+        ("CODE_BLOCK", re.compile(r'```[\w]*\n?[\s\S]*?```', re.DOTALL)),
+        ("MATH_DISPLAY", re.compile(r'(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])', re.DOTALL)),
+        ("MATH_INLINE", re.compile(r'(?<!\$)\$(?!\$)(?:\\\$|[^\$\n])+(?<!\$)\$(?!\$)|\\\(.*?\\\)')),
+        ("CODE_INLINE", re.compile(r'`[^`\n]+`')),
+    ]
+
+    def __init__(self):
+        self.registry: Dict[str, str] = {}
+        self.counter = 0
+
+    def shield(self, text: str) -> str:
+        if not text:
+            return ""
+        output = text
+        for token_prefix, regex in self.SHIELD_PATTERNS:
+            def _replacer(match: re.Match) -> str:
+                self.counter += 1
+                token = f"____SHIELD_{token_prefix}_{self.counter}____"
+                self.registry[token] = match.group(0)
+                return token
+            output = regex.sub(_replacer, output)
+        return output
+
+    def unshield(self, text: str) -> str:
+        if not text:
+            return ""
+        output = text
+        for token, original in sorted(self.registry.items(), key=lambda x: len(x[0]), reverse=True):
+            output = output.replace(token, original)
+        return output
+
+
 def strip_html_tags(text: str) -> str:
-    """Removes HTML tags from text for length and content validation."""
+    """Removes HTML tags from text without stripping mathematical comparison inequalities (< or >)."""
     if not text:
         return ""
-    return re.sub(r'<[^>]+>', '', text)
+    return re.sub(r'</?[a-zA-Z][a-zA-Z0-9]*(?:\s+[^>]*)?>', '', text)
 
 
 @dataclass
@@ -158,6 +194,7 @@ class CardSanitizer:
         """
         Repairs missing or duplicated terminal punctuation.
         Ensures questions end with '?' and declarative answers end with '.', '!', or '?'.
+        Does not mutate mathematical formulas or code blocks.
         """
         if not text:
             return ""
@@ -170,6 +207,9 @@ class CardSanitizer:
         t = re.sub(r'\.+\?', '?', t)
         t = re.sub(r'\.{2,}', '.', t)
         t = re.sub(r'!+\.?', '!', t)
+
+        # Check if text ends with a shielded math or code token
+        ends_with_shield = bool(re.search(r'____SHIELD_(?:MATH|CODE)_[A-Z0-9_]+____$', t))
 
         if is_question:
             # Check if text is an interrogative sentence
@@ -193,24 +233,28 @@ class CardSanitizer:
                     else:
                         t = t + '?'
         else:
-            # For answers, ensure terminal punctuation exists
-            raw_stripped = strip_html_tags(t).strip()
-            if raw_stripped and not raw_stripped.endswith(('.', '!', '?')):
-                t = t + '.'
+            # For answers, ensure terminal punctuation exists only if NOT ending in shielded math/code
+            if not ends_with_shield:
+                raw_stripped = strip_html_tags(t).strip()
+                if raw_stripped and not raw_stripped.endswith(('.', '!', '?')) and not raw_stripped.endswith(('$', '$$', r'\)', r'\]')):
+                    t = t + '.'
 
         return t
 
     def sanitize_text(self, text: str, is_question: bool = False) -> str:
-        """Applies all cleaning operations sequentially to a string."""
+        """Applies all cleaning operations sequentially to a string, shielding math and code syntax."""
         if not text:
             return ""
-        t = self.strip_css(text)
+        shield = ContentShield()
+        shielded = shield.shield(text)
+        t = self.strip_css(shielded)
         t = self.strip_figure_citations(t)
         t = self.strip_index_runs(t)
         t = self.normalize_whitespace(t)
         t = self.normalize_quotes(t)
         t = self.normalize_punctuation(t, is_question=is_question)
-        return t.strip()
+        unshielded = shield.unshield(t)
+        return unshielded.strip()
 
     def sanitize(self, card: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -233,22 +277,13 @@ class CardSanitizer:
         # Cloze text
         if "cloze_text" in c and c["cloze_text"]:
             cloze = c["cloze_text"]
-            cloze = self.strip_css(cloze)
-            cloze = self.strip_figure_citations(cloze)
-            cloze = self.strip_index_runs(cloze)
-            cloze = self.normalize_whitespace(cloze)
-            cloze = self.normalize_quotes(cloze)
             # Cloze may be question or statement; repair punctuation without forcing question mark
             is_q = bool(re.search(r'^(What|Which|How|Why|Where|When)\b', strip_html_tags(cloze).strip(), re.I))
-            c["cloze_text"] = self.normalize_punctuation(cloze, is_question=is_q).strip()
+            c["cloze_text"] = self.sanitize_text(cloze, is_question=is_q)
 
         # Context and notes
         if "context" in c and c["context"]:
-            ctx = self.strip_css(c["context"])
-            ctx = self.strip_figure_citations(ctx)
-            ctx = self.normalize_whitespace(ctx)
-            ctx = self.normalize_quotes(ctx)
-            c["context"] = ctx.strip()
+            c["context"] = self.sanitize_text(c["context"], is_question=False)
 
         # Keyword and Descriptor fields if present
         if "keyword" in c and c["keyword"]:
@@ -497,11 +532,15 @@ class CardDeduplicator:
 
     @staticmethod
     def normalize_for_signature(text: str) -> str:
-        """Strips HTML tags, symbols, whitespace, and lowercases text for signature hashing."""
+        """Strips HTML tags, symbols, whitespace, and lowercases text for signature hashing while preserving mathematical/comparison operators."""
         if not text:
             return ""
         t = strip_html_tags(text).lower()
-        return re.sub(r'[^a-z0-9]', '', t)
+        t = t.replace('<=', ' _lte_ ').replace('>=', ' _gte_ ')
+        t = t.replace('<', ' _lt_ ').replace('>', ' _gt_ ')
+        t = t.replace('!=', ' _neq_ ').replace('=', ' _eq_ ')
+        t = t.replace('~', ' _by_ ').replace('+', ' _plus_ ')
+        return re.sub(r'[^a-z0-9_]', '', t)
 
     def get_signature(self, card: Dict[str, Any]) -> Tuple[str, ...]:
         """
@@ -642,13 +681,67 @@ DEFAULT_CARD_QUALITY = {
     "validate_format": True
 }
 
-# Cognitive Taxonomies definitions (from anki_creation_prompt.md)
+# Cognitive Taxonomies definitions across university academic domains
 COGNITIVE_TAXONOMIES = {
+    # Foundational / Biology / Pharmacology
     "term_definition": "Term -> Definition",
     "concept_mechanism": "Concept -> Mechanism",
     "function_structure": "Function -> Structure",
-    "example_category": "Example -> Category"
+    "example_category": "Example -> Category",
+    # Statistics & Quantitative Methods
+    "test_selection": "Diagnostic Test Selection",
+    "assumption_triad": "Assumption-Diagnosis-Remediation Triad",
+    "formula_decomposition": "Formula Decomposition & Degrees of Freedom",
+    "decision_rule": "Hypotheses & Statistical Decision Rule",
+    "r_syntax": "Computational / R Syntax & Data Types",
+    # Developmental Psychology
+    "developmental_stage": "Developmental Stage & Milestone",
+    "experimental_paradigm": "Experimental Paradigm & Construct",
+    # Professionalism & Ethics
+    "ethical_dilemma_rule": "Ethical Dilemma & Rule Precedence",
 }
+
+# Statistical & Quantitative Constants (PSYC 3031 / Research Methods)
+STATISTICAL_TESTS = {
+    "independent samples t-test", "independent-samples t-test", "independent t-test",
+    "paired samples t-test", "paired-samples t-test", "paired t-test", "dependent t-test",
+    "one-way between-subjects anova", "one-way anova", "between-subjects anova",
+    "repeated measures anova", "repeated-measures anova", "within-subjects anova",
+    "two-way factorial anova", "factorial anova", "two-way anova",
+    "chi-square test of independence", "chi-square goodness of fit", "chi-square",
+    "pearson correlation", "spearman rank correlation", "spearman correlation",
+    "simple linear regression", "multiple linear regression", "linear regression",
+    "ancova", "manova", "welch's t-test", "welch's anova",
+    "mann-whitney u test", "wilcoxon signed-rank test", "kruskal-wallis test", "friedman test"
+}
+
+STATISTICAL_ASSUMPTIONS = {
+    "homogeneity of variance", "homoscedasticity", "normality", "sphericity",
+    "independence of observations", "linearity", "multicollinearity", "normality of residuals",
+    "equal variance", "equal variances"
+}
+
+R_SYNTAX_CUES = [
+    r"\bt\.test\(", r"\baov\(", r"\blm\(", r"\banova\(", r"\bleveneTest\(",
+    r"\bshapiro\.test\(", r"\bggplot\(", r"\bsummary\(", r"\bdata\.frame\(",
+    r"\bpairwise\.t\.test\(", r"\boneway\.test\(", r"\bpsych::describe\(",
+    r"\bdplyr::", r"\bmutate\(", r"\bfilter\(", r"\bselect\(",
+    r"\blibrary\([a-zA-Z0-9\._]+\)", r"`[a-zA-Z0-9_\.]+\(.*?\)`",
+    r"\bcoercion\b", r"\btibble\b", r"\bdata\.frame\b"
+]
+
+DECISION_CUES = [
+    r"\breject\s+h0\b", r"\bfail\s+to\s+reject\b", r"\bnull\s+hypothesis\b",
+    r"\balternative\s+hypothesis\b", r"\balpha\s*=\s*\.?\d+", r"\bp\s*[<>=≤≥]\s*\.?\d+",
+    r"\bdecision\s+rule\b", r"\btype\s+i\s+error\b", r"\btype\s+ii\s+error\b",
+    r"\bcritical\s+value\b", r"\bstatistical\s+power\b"
+]
+
+FORMULA_CUES = [
+    r"\$\$.*?\$\$", r"\$.*?\$", r"\\frac", r"\\sum", r"\\sigma", r"\\mu",
+    r"\bdf\s*=", r"\bdegrees\s+of\s+freedom\b", r"\bcalculated\s+as\b",
+    r"\bformula\s+for\b", r"\bstandard\s+error\b", r"\bpooled\s+variance\b"
+]
 
 ANATOMICAL_STRUCTURES = {
     "frontal lobe", "prefrontal cortex", "parietal lobe", "temporal lobe", "occipital lobe",
@@ -794,27 +887,51 @@ def filter_and_validate_deck(
     return cards_out
 
 
-def classify_cognitive_taxonomy(keyword: str, descriptor: str, context: str = "") -> str:
+def classify_cognitive_taxonomy(keyword: str, descriptor: str, context: str = "", domain: str = "general") -> str:
     """
-    Classifies content into one of four cognitive card formulation taxonomies:
-    1. Function -> Structure
-    2. Concept -> Mechanism
-    3. Example -> Category
-    4. Term -> Definition (Default)
+    Classifies content into domain-specific cognitive card formulation taxonomies:
+    1. Statistics: test_selection, assumption_triad, formula_decomposition, decision_rule, r_syntax
+    2. Developmental Psychology: developmental_stage, experimental_paradigm
+    3. Professionalism & Ethics: ethical_dilemma_rule
+    4. Biological / Pharmacology: function_structure, concept_mechanism, example_category
+    5. Fallback: term_definition
     """
     kw_lower = keyword.strip().lower() if keyword else ""
     desc_lower = descriptor.strip().lower() if descriptor else ""
     ctx_lower = context.strip().lower() if context else ""
     combined = f"{kw_lower} {desc_lower} {ctx_lower}"
 
-    # 1. Example -> Category
+    # 1. Statistics & Quantitative Methods
+    if domain == "statistics" or any(t in combined for t in ["anova", "t-test", "regression", "p-value", "degrees of freedom", "null hypothesis"]):
+        if any(re.search(cue, combined) for cue in R_SYNTAX_CUES) or "r code" in combined or "syntax" in combined:
+            return "r_syntax"
+        if any(re.search(cue, combined) for cue in DECISION_CUES):
+            return "decision_rule"
+        if any(a in combined for a in STATISTICAL_ASSUMPTIONS):
+            return "assumption_triad"
+        if any(t in kw_lower for t in STATISTICAL_TESTS) or "test used" in desc_lower or "test is used" in desc_lower or "appropriate test" in desc_lower:
+            return "test_selection"
+        if any(re.search(cue, combined) for cue in FORMULA_CUES):
+            return "formula_decomposition"
+
+    # 2. Developmental Psychology
+    if domain == "developmental_psychology" or any(t in combined for t in ["piaget", "erikson", "vygotsky", "developmental stage"]):
+        if any(s in combined for s in ["stage", "sensorimotor", "preoperational", "concrete operational", "formal operational", "crisis", "attachment style"]):
+            return "developmental_stage"
+        if any(p in combined for p in ["strange situation", "visual cliff", "false belief", "habituation", "conservation task"]):
+            return "experimental_paradigm"
+
+    # 3. Professionalism & Ethics
+    if domain == "professionalism" or any(t in combined for t in ["cpa code", "ethics", "informed consent", "confidentiality", "tri-council"]):
+        return "ethical_dilemma_rule"
+
+    # 4. Biological / Pharmacology
     if kw_lower in CLINICAL_EXAMPLES or any(term in kw_lower for term in ["syndrome", "aphasia", "neglect", "disease", "disorder"]):
         return "example_category"
     for cue in EXEMPLAR_CUES:
         if re.search(cue, combined):
             return "example_category"
 
-    # 2. Function -> Structure
     if kw_lower in ANATOMICAL_STRUCTURES or any(struct in kw_lower for struct in ["lobe", "cortex", "ganglia", "nucleus", "tract", "ventricle"]):
         return "function_structure"
     for cue in FUNCTION_CUES:
@@ -822,14 +939,12 @@ def classify_cognitive_taxonomy(keyword: str, descriptor: str, context: str = ""
             if any(s in combined for s in ["brain", "cortex", "neuron", "axon", "cell", "cns", "lobe", "hemisphere"]):
                 return "function_structure"
 
-    # 3. Concept -> Mechanism
     if kw_lower in MECHANISM_TERMS or any(m in kw_lower for m in ["potential", "transmission", "cascade", "cycle", "pathway"]):
         return "concept_mechanism"
     for cue in MECHANISM_CUES:
         if re.search(cue, desc_lower):
             return "concept_mechanism"
 
-    # 4. Term -> Definition
     return "term_definition"
 
 
@@ -840,11 +955,12 @@ def formulate_cognitive_cards(
     heading: str = "General",
     context: str = "",
     badge: Optional[str] = None,
-    tags: Optional[List[str]] = None
+    tags: Optional[List[str]] = None,
+    domain: str = "general"
 ) -> List[Dict[str, Any]]:
     """
     Formulates atomic flashcards according to cognitive formulation taxonomies
-    from anki_creation_prompt.md while adhering to SuperMemo 20 Rules.
+    across academic domains while adhering to SuperMemo 20 Rules.
     """
     sanitizer = CardSanitizer()
     clean_kw = sanitizer.sanitize_text(keyword, is_question=False)
@@ -853,7 +969,7 @@ def formulate_cognitive_cards(
     base_tags = list(tags) if tags else []
 
     if not taxonomy:
-        taxonomy = classify_cognitive_taxonomy(clean_kw, clean_desc, context=ctx_field)
+        taxonomy = classify_cognitive_taxonomy(clean_kw, clean_desc, context=ctx_field, domain=domain)
 
     cards: List[Dict[str, Any]] = []
 
@@ -927,7 +1043,159 @@ def formulate_cognitive_cards(
         })
         return cards
 
-    # 4. Term -> Definition
+    # 4. Diagnostic Test Selection (PSYC 3031)
+    if taxonomy == "test_selection":
+        b = badge or "badge-important"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "test_selection",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"Which statistical test should be selected for: <i>{clean_desc}</i>?",
+            "answer": f"<b>{clean_kw}</b>",
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["statistics", "test_selection", "recall"]))
+        })
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "test_selection",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"Under what study design conditions is <b>{clean_kw}</b> appropriate?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["statistics", "test_selection", "recognition"]))
+        })
+        return cards
+
+    # 5. Assumption-Diagnosis-Remediation Triad (PSYC 3031)
+    if taxonomy == "assumption_triad":
+        b = badge or "badge-important"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "assumption_triad",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"Regarding the assumption of <b>{clean_kw}</b>, what diagnostic test is used and what is the remediation if violated?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["statistics", "assumption_triad"]))
+        })
+        return cards
+
+    # 6. Formula Decomposition & Degrees of Freedom (PSYC 3031)
+    if taxonomy == "formula_decomposition":
+        b = badge or "badge-important"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "formula_decomposition",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"In the formula for <b>{clean_kw}</b>, what does the following component represent:<br><i>{clean_desc}</i>?",
+            "answer": clean_desc if "represents" in clean_desc.lower() else f"<b>{clean_kw}</b>: {clean_desc}",
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["statistics", "formula_decomposition"]))
+        })
+        return cards
+
+    # 7. Hypotheses & Statistical Decision Rules (PSYC 3031)
+    if taxonomy == "decision_rule":
+        b = badge or "badge-important"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "decision_rule",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"State the statistical decision rule regarding <b>{clean_kw}</b>:",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["statistics", "decision_rule"]))
+        })
+        return cards
+
+    # 8. Computational / R Syntax & Data Types (PSYC 3031)
+    if taxonomy == "r_syntax":
+        b = badge or "badge-code"
+        # Card 1: Purpose -> Function Syntax
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "r_syntax",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"What R syntax or function executes: <i>{clean_desc}</i>?",
+            "answer": f"<code>{clean_kw}</code>",
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["r_syntax", "programming", "forward"]))
+        })
+        # Card 2: Function Syntax -> Purpose / Output
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "r_syntax",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"What is the purpose and effect of the R function <code>{clean_kw}</code>?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["r_syntax", "programming", "reverse"]))
+        })
+        return cards
+
+    # 9. Developmental Stage & Milestone (PSYC 2110)
+    if taxonomy == "developmental_stage":
+        b = badge or "badge-definition"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "developmental_stage",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"In developmental psychology, what age range and milestone characterize <b>{clean_kw}</b>?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["developmental", "stage_milestone"]))
+        })
+        return cards
+
+    # 10. Experimental Paradigm & Construct (PSYC 2110)
+    if taxonomy == "experimental_paradigm":
+        b = badge or "badge-definition"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "experimental_paradigm",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"What psychological construct is evaluated by the <b>{clean_kw}</b> paradigm?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["developmental", "experimental_paradigm"]))
+        })
+        return cards
+
+    # 11. Ethical Dilemma & Rule Precedence (PSYC 3000)
+    if taxonomy == "ethical_dilemma_rule":
+        b = badge or "badge-important"
+        cards.append({
+            "card_type": "active_recall_qa",
+            "taxonomy": "ethical_dilemma_rule",
+            "keyword": clean_kw,
+            "descriptor": clean_desc,
+            "question": f"According to professional ethics standards, what rule governs <b>{clean_kw}</b>?",
+            "answer": clean_desc,
+            "category_badge": b,
+            "context": ctx_field,
+            "tags": list(dict.fromkeys(base_tags + ["ethics", "professionalism"]))
+        })
+        return cards
+
+    # 12. Term -> Definition (Default)
     b = badge or "badge-definition"
     cards.append({
         "card_type": "bidirectional_definition",

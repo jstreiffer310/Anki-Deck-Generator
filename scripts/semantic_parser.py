@@ -151,7 +151,35 @@ FUNCTIONAL_COPULAS = [
     r"\bmodulate\b",
 ]
 
-# Class 4: Punctuation & Typographic Copulas (4 patterns)
+# Class 4: Statistical, Methodological & Computational Copulas (24 patterns)
+STATISTICAL_COPULAS = [
+    r"\bis\s+calculated\s+as\b",
+    r"\bis\s+calculated\s+by\b",
+    r"\bis\s+computed\s+as\b",
+    r"\bis\s+computed\s+by\b",
+    r"\bis\s+given\s+by\s+the\s+formula\b",
+    r"\bis\s+given\s+by\b",
+    r"\bequals\b",
+    r"\bassumes\s+that\b",
+    r"\brequires\s+the\s+assumption\s+of\b",
+    r"\bis\s+diagnosed\s+by\b",
+    r"\bis\s+diagnosed\s+using\b",
+    r"\bis\s+evaluated\s+using\b",
+    r"\bis\s+remedied\s+by\b",
+    r"\bis\s+remedied\s+using\b",
+    r"\bis\s+used\s+to\s+test\b",
+    r"\bis\s+used\s+when\s+comparing\b",
+    r"\bis\s+appropriate\s+when\b",
+    r"\bis\s+selected\s+when\b",
+    r"\breject\s+h0\s+when\b",
+    r"\breject\s+the\s+null\s+hypothesis\s+if\b",
+    r"\bfail\s+to\s+reject\s+h0\s+when\b",
+    r"\bretain\s+the\s+null\s+hypothesis\s+if\b",
+    r"\bin\s+r,\s+the\s+function\b",
+    r"\bis\s+executed\s+in\s+r\s+using\b",
+]
+
+# Class 5: Punctuation & Typographic Copulas (4 patterns)
 TYPOGRAPHIC_COPULAS = [
     r"\s*:\s*",
     r"\s+—\s+",
@@ -159,9 +187,9 @@ TYPOGRAPHIC_COPULAS = [
     r"\s+-\s+",
 ]
 
-# Combined Lexicon (total >= 77 patterns, exceeding 64 required)
+# Combined Lexicon (total >= 101 patterns, exceeding 64 required)
 ALL_LINKING_PATTERNS = (
-    DEFINITIONAL_COPULAS + EQUATIVE_COPULAS + FUNCTIONAL_COPULAS + TYPOGRAPHIC_COPULAS
+    DEFINITIONAL_COPULAS + EQUATIVE_COPULAS + FUNCTIONAL_COPULAS + STATISTICAL_COPULAS + TYPOGRAPHIC_COPULAS
 )
 COPULA_LEXICON_COUNT = len(ALL_LINKING_PATTERNS)
 
@@ -225,12 +253,60 @@ STRICT OPERATIONAL RULES:
 6. CONTEXT ANCHORING (Rules 11 & 16):
    - Always populate the "context" field with the lecture topic, heading, or clinical examples to eliminate ambiguity and prevent interference.
 
-7. COGNITIVE FORMULATION TAXONOMIES:
+7. COGNITIVE FORMULATION TAXONOMIES ACROSS ACADEMIC DISCIPLINES:
    - Term -> Definition: For foundational vocabulary, vocabulary acquisition, and core definitions.
    - Concept -> Mechanism: For biochemical processes, pathways, cascades, and physiological mechanisms.
    - Function -> Structure: For anatomical brain regions and structures linked to specific physiological/behavioral functions.
    - Example -> Category: For clinical cases, disorders, or specific case studies exemplifying a general phenomenon.
+   - Diagnostic Test Selection: For mapping study design parameters and variance conditions to the appropriate statistical test.
+   - Assumption Triad: For statistical assumptions linked to diagnostic checks and violation remediations.
+   - Formula Decomposition: For atomic components, ratio meaning, and degrees of freedom in mathematical models.
+   - Statistical Decision Rule: For alpha levels, p-value criteria, and null hypothesis rejection boundaries.
+   - Computational / R Syntax: For R functions, argument flags, coercion rules, and data structures.
+   - Developmental Stage & Milestone: For psychological stages (Piaget, Erikson) and chronological age milestones.
+   - Experimental Paradigm: For experimental designs (e.g. Strange Situation, Visual Cliff) testing specific constructs.
+   - Ethical Dilemma & Rule: For professional codes of conduct (e.g. CPA principles) and precedence rules.
 """
+
+def get_domain_system_prompt(domain: str = "general") -> str:
+    """Returns the base SuperMemo prompt enhanced with subject-specific guidelines."""
+    extensions = {
+        "statistics": """
+DOMAIN INSTRUCTIONS — STATISTICS & QUANTITATIVE METHODS (PSYC 3031):
+1. MATHEMATICAL NOTATION & EQUATIONS:
+   - Format inline math using LaTeX $...$ (e.g., $p < .05$, $df = N - k$, $\\alpha = .05$, $t(28) = 2.45$, $\\eta^2 = .14$).
+   - Format display math using LaTeX $$...$$ (e.g., $$s^2 = \\frac{\\sum (X - \\bar{X})^2}{N - 1}$$).
+   - Deconstruct complex formulas into atomic ratio meaning (Signal vs Noise) and degrees of freedom.
+2. R COMPUTATIONAL SYNTAX:
+   - Format all R code, package functions, and command calls using markdown backticks (e.g. `t.test(..., paired = TRUE)`).
+   - Use 'r_syntax' taxonomy when notes highlight coding workflows or data manipulation (dplyr, psych).
+3. THE 6 QUANTITATIVE ARCHETYPES:
+   - 'test_selection': Test mapping from experimental design constraints to test names.
+   - 'assumption_triad': Test assumptions paired with diagnostic tests and violation remediations.
+   - 'formula_decomposition': Component meaning of mathematical terms.
+   - 'decision_rule': Hypotheses rejection conditions.
+   - 'cloze': Cloze deletions targeting operators, thresholds, or code arguments.
+""",
+        "pharmacology": """
+DOMAIN INSTRUCTIONS — PHARMACOLOGY (PSYC 3590):
+1. RECEPTOR MECHANISMS: Test agonist, antagonist, allosteric modulator kinetics.
+2. PHARMACOKINETICS / DYNAMICS: Focus on affinity, efficacy, half-life ($t_{1/2}$), $ED_{50}$, therapeutic index.
+3. STRUCTURE & FUNCTION: Correlate anatomical brain regions and neurotransmitter pathways.
+""",
+        "developmental_psychology": """
+DOMAIN INSTRUCTIONS — DEVELOPMENTAL PSYCHOLOGY (PSYC 2110):
+1. STAGE THEORIES: Test Piaget, Erikson, Vygotsky stages and chronological age brackets.
+2. EXPERIMENTAL PARADIGMS: Test paradigms (Strange Situation, Visual Cliff, Habituation) paired with operationalized constructs.
+""",
+        "professionalism": """
+DOMAIN INSTRUCTIONS — PROFESSIONALISM & ETHICS (PSYC 3000):
+1. CPA ETHICAL PRINCIPLES: Respect for Dignity > Responsible Caring > Integrity > Responsibility to Society.
+2. MANDATORY BOUNDARIES: Limits of confidentiality, mandatory reporting, duty to protect.
+"""
+    }
+    ext = extensions.get(domain, "")
+    return (SUPERMEMO_SYSTEM_PROMPT + "\n" + ext).strip()
+
 
 CARD_DECOMPOSITION_JSON_SCHEMA = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -250,7 +326,15 @@ CARD_DECOMPOSITION_JSON_SCHEMA = {
                             "cloze",
                             "function_structure",
                             "concept_mechanism",
-                            "example_category"
+                            "example_category",
+                            "test_selection",
+                            "assumption_triad",
+                            "formula_decomposition",
+                            "decision_rule",
+                            "r_syntax",
+                            "developmental_stage",
+                            "experimental_paradigm",
+                            "ethical_dilemma_rule"
                         ]
                     },
                     "taxonomy": {
@@ -259,7 +343,15 @@ CARD_DECOMPOSITION_JSON_SCHEMA = {
                             "term_definition",
                             "concept_mechanism",
                             "function_structure",
-                            "example_category"
+                            "example_category",
+                            "test_selection",
+                            "assumption_triad",
+                            "formula_decomposition",
+                            "decision_rule",
+                            "r_syntax",
+                            "developmental_stage",
+                            "experimental_paradigm",
+                            "ethical_dilemma_rule"
                         ]
                     },
                     "keyword": {
@@ -459,6 +551,29 @@ def create_cloze_card(
             "tags": list(set(tags_list + ["cloze", "high_yield"]))
         }
 
+    # Target 3: Statistical metrics (p-values, alpha, degrees of freedom, confidence intervals, effect sizes)
+    stat_match = re.search(
+        r'(?:\b(?:p|alpha|F|t|z|r)\s*[<>=≤≥]\s*\.?\d+(?:\.\d+)?|\bdf\s*=\s*[\w\s\-\+\(\)]+|\b\d{2}%\s*CI\s*\[\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\]|\b(?:d|eta\^2|R\^2)\s*=\s*\.?\d+(?:\.\d+)?)',
+        clean_text,
+        re.IGNORECASE
+    )
+    if stat_match:
+        target = stat_match.group(0).strip()
+        start, end = stat_match.span()
+        cloze_text = clean_text[:start] + f"{{{{c1::{target}}}}}" + clean_text[end:]
+        subject = heading if heading != "General" else "Statistical Rule"
+        return {
+            "card_type": "cloze",
+            "keyword": subject,
+            "descriptor": clean_text,
+            "question": f"Identify the statistical threshold/value regarding <b>{subject}</b>:<br>{cloze_text}",
+            "answer": target,
+            "cloze_text": cloze_text,
+            "category_badge": "badge-important",
+            "context": context or heading,
+            "tags": list(set(tags_list + ["cloze", "statistics", "high_yield"]))
+        }
+
     return None
 
 
@@ -590,7 +705,8 @@ class SemanticCardParser:
         highlight_color: str,
         heading: str = "General",
         context: str = "",
-        paragraph_prefix: str = ""
+        paragraph_prefix: str = "",
+        domain: str = "general"
     ) -> List[Dict[str, Any]]:
         """
         Main entry point for parsing a highlighted text segment.
@@ -602,7 +718,7 @@ class SemanticCardParser:
             return []
 
         # 1. Attempt LLM Parsing via Ollama
-        cards = self.parse_with_ollama(clean_input, highlight_color, heading, context, paragraph_prefix)
+        cards = self.parse_with_ollama(clean_input, highlight_color, heading, context, paragraph_prefix, domain=domain)
         if cards:
             # Validate all returned cards against veto conditions
             valid_cards = []
@@ -614,7 +730,7 @@ class SemanticCardParser:
                 return valid_cards
 
         # 2. Fallback to Deterministic Parser
-        return self.parse_with_fallback(clean_input, highlight_color, heading, context, paragraph_prefix)
+        return self.parse_with_fallback(clean_input, highlight_color, heading, context, paragraph_prefix, domain=domain)
 
     def parse_with_ollama(
         self,
@@ -622,7 +738,8 @@ class SemanticCardParser:
         highlight_color: str,
         heading: str = "General",
         context: str = "",
-        paragraph_prefix: str = ""
+        paragraph_prefix: str = "",
+        domain: str = "general"
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Parses highlight using Ollama local AI runtime with structured JSON output.
@@ -648,6 +765,7 @@ class SemanticCardParser:
         user_prompt = (
             f"Please decompose the following lecture highlight into atomic Anki cards according to SuperMemo 20 Rules:\n\n"
             f"Topic/Heading: {heading}\n"
+            f"Domain: {domain}\n"
             f"Highlight Color: {highlight_color} (Green=Definition/Mechanism, Yellow=Important/Threshold)\n"
             f"Preceding Context: {paragraph_prefix or 'None'}\n"
             f"Additional Context: {context or 'None'}\n"
@@ -658,7 +776,7 @@ class SemanticCardParser:
         try:
             result = self.runtime_manager.generate_json(
                 prompt=user_prompt,
-                system_prompt=SUPERMEMO_SYSTEM_PROMPT,
+                system_prompt=get_domain_system_prompt(domain),
                 temperature=0.1
             )
         except Exception as e:
@@ -733,11 +851,12 @@ class SemanticCardParser:
                     "tags": list(set(merged_tags + ["cloze", "high_yield"]))
                 })
 
-            else:  # active_recall_qa
+            else:  # active_recall_qa or specialized taxonomies
                 q = item.get("question", "")
                 a = item.get("answer", "")
                 expanded_cards.append({
                     "card_type": "active_recall_qa",
+                    "taxonomy": item.get("taxonomy", "active_recall_qa"),
                     "keyword": kw,
                     "descriptor": desc,
                     "question": q,
@@ -764,10 +883,11 @@ class SemanticCardParser:
         highlight_color: str,
         heading: str = "General",
         context: str = "",
-        paragraph_prefix: str = ""
+        paragraph_prefix: str = "",
+        domain: str = "general"
     ) -> List[Dict[str, Any]]:
         """
-        Deterministic 64-pattern fallback parser.
+        Deterministic 101-pattern fallback parser.
         Enforces SuperMemo Rule 4 (Atomicity), Rule 5 (Cloze),
         and ANKI_SOP Keyword-Descriptor separation with 0% 'this concept' emissions.
         """
@@ -788,9 +908,21 @@ class SemanticCardParser:
         if color_lower == "green":
             term, definition, tier = split_highlight_fallback(clean_text, paragraph_prefix, heading)
 
+            # In quantitative/statistics domains, route to specialized cognitive archetypes
+            QUANT_TAXONOMIES = {"test_selection", "assumption_triad", "formula_decomposition", "decision_rule", "r_syntax"}
+            if classify_cognitive_taxonomy is not None and formulate_cognitive_cards is not None:
+                tax = classify_cognitive_taxonomy(term, definition, context=ctx_field, domain=domain)
+                if tax in QUANT_TAXONOMIES or (domain == "statistics" and tax != "term_definition"):
+                    cog_cards = formulate_cognitive_cards(
+                        term, definition, taxonomy=tax, heading=heading, context=ctx_field, domain=domain, tags=base_tags
+                    )
+                    if cog_cards:
+                        return cog_cards
+
             # Card 1: Forward (Active Recall: Term -> Definition)
             cards.append({
                 "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
                 "question": f"What is the definition of <b>{term}</b>?",
@@ -803,6 +935,7 @@ class SemanticCardParser:
             # Card 2: Reverse (Active Recognition: Definition -> Term)
             cards.append({
                 "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
                 "question": f"What term is defined by:<br><i>{definition}</i>",
@@ -830,13 +963,26 @@ class SemanticCardParser:
                 # Otherwise, extract subject via multi-tier fallback
                 term, descriptor, tier = split_highlight_fallback(clause, paragraph_prefix, heading)
                 
+                if domain == "statistics":
+                    sig_label = "statistical role or rule"
+                    mech_label = "key statistical principle"
+                elif domain == "developmental_psychology":
+                    sig_label = "developmental significance"
+                    mech_label = "key developmental process"
+                elif domain == "professionalism":
+                    sig_label = "ethical significance"
+                    mech_label = "key ethical rule or principle"
+                else:
+                    sig_label = "clinical significance"
+                    mech_label = "key mechanism"
+
                 # If term is short and clean, create active recall question
                 if term and term != heading and term != "Key Principle":
                     cards.append({
                         "card_type": "active_recall_qa",
                         "keyword": term,
                         "descriptor": descriptor,
-                        "question": f"What is the clinical significance of <b>{term}</b>?",
+                        "question": f"What is the {sig_label} of <b>{term}</b>?",
                         "answer": descriptor,
                         "category_badge": "badge-important",
                         "context": ctx_field,
@@ -848,7 +994,7 @@ class SemanticCardParser:
                         "card_type": "active_recall_qa",
                         "keyword": term,
                         "descriptor": descriptor,
-                        "question": f"What is the key mechanism regarding <b>{term}</b>?",
+                        "question": f"What is the {mech_label} regarding <b>{term}</b>?",
                         "answer": descriptor,
                         "category_badge": "badge-important",
                         "context": ctx_field,

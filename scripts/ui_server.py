@@ -171,9 +171,17 @@ def discover_classes_and_notes() -> list:
         # Saved Google Doc URL / ID for this course
         saved_gdoc = recent_doc_links.get(course_code, "")
 
+        detected_domain = "general"
+        try:
+            from scripts.extract_and_generate import detect_course_domain
+            detected_domain = detect_course_domain(str(p), explicit_class=course_code)
+        except Exception:
+            pass
+
         courses.append({
             "course_code": course_code,
             "course_title": course_title,
+            "domain": detected_domain,
             "folder_name": folder_name,
             "folder_path": str(p),
             "documents": sorted(documents, key=lambda x: (x["is_syllabus"], not "notes" in x["name"].lower(), x["name"])),
@@ -291,6 +299,7 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
         source = payload.get("source")
         explicit_class = payload.get("course_code")
         explicit_chapter = payload.get("chapter")
+        domain = payload.get("domain")
         auto_inject = payload.get("auto_inject", True)
 
         if not source:
@@ -311,7 +320,8 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
                 source=source,
                 explicit_class=explicit_class,
                 explicit_chapter=explicit_chapter,
-                auto_inject=auto_inject
+                auto_inject=auto_inject,
+                domain=domain
             )
 
             # Calculate SuperMemo atomicity & quality metrics
@@ -321,12 +331,27 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
             
             clean_cards = []
             for c in cards:
+                badge = c.get("category_badge", "badge-definition")
+                if "test" in badge:
+                    badge_label = "TEST SELECTION"
+                elif "formula" in badge:
+                    badge_label = "FORMULA"
+                elif "code" in badge:
+                    badge_label = "R SYNTAX"
+                elif "assumption" in badge:
+                    badge_label = "ASSUMPTION"
+                elif "important" in badge:
+                    badge_label = "HIGH YIELD"
+                else:
+                    badge_label = "DEFINITION"
+
                 clean_cards.append({
                     "card_type": c.get("card_type", "active_recall_qa"),
+                    "taxonomy": c.get("taxonomy", ""),
                     "question": c.get("question", ""),
                     "answer": c.get("answer", ""),
-                    "badge": c.get("category_badge", "badge-definition"),
-                    "badge_label": "HIGH YIELD" if "important" in c.get("category_badge", "") else "DEFINITION",
+                    "badge": badge,
+                    "badge_label": badge_label,
                     "context": c.get("context", ""),
                     "tags": c.get("tags", [])
                 })
@@ -348,10 +373,7 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("Error generating deck")
-            self.send_json_response({
-                "success": False,
-                "error": str(e)
-            }, status=500)
+            self.send_json_response({"success": False, "error": str(e)}, status=500)
 
     def serve_static_file(self, req_path):
         if req_path in ("/", ""):
