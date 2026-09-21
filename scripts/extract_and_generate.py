@@ -1220,10 +1220,21 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         tags = list(deck_tags)
         if domain and domain != "general" and domain not in tags:
             tags.append(domain)
-        if heading and heading != "General":
-            clean_tag = re.sub(r'[^a-zA-Z0-9_]', '', heading.replace(" ", "_"))[:30]
-            if clean_tag:
+
+        # Build tags from the full heading hierarchy (chapter → section → subsection)
+        # Each level gets its own tag so cards can be filtered by chapter or topic.
+        hier = item.get("heading_hierarchy") or ([heading] if heading and heading != "General" else [])
+        if isinstance(hier, str):
+            hier = [hier]
+        seen_tags = set(tags)
+        for h in hier:
+            if not h or h == "General":
+                continue
+            clean_tag = re.sub(r'[^a-zA-Z0-9_]', '_', h.strip())
+            clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')[:50]
+            if clean_tag and clean_tag not in seen_tags:
                 tags.append(clean_tag)
+                seen_tags.add(clean_tag)
 
         # Filter out punctuation-only highlights
         valid_highlights = [
