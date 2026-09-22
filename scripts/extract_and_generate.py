@@ -89,6 +89,16 @@ except ImportError:
         detect_input_type = None
         ingest_source = None
 
+# Source auto-resolution engine
+try:
+    from scripts.source_resolver import resolve_source_document, get_course_registry
+except ImportError:
+    try:
+        from source_resolver import resolve_source_document, get_course_registry
+    except ImportError:
+        resolve_source_document = None
+        get_course_registry = None
+
 # Card validation & cognitive taxonomies
 try:
     from scripts.card_validator import (
@@ -2144,6 +2154,24 @@ def process_source_and_generate(
     Returns:
         (out_apkg_path, deck_title, cards)
     """
+    # Auto-resolve course codes, .gdoc files, or empty source inputs
+    if resolve_source_document is not None:
+        try:
+            resolved_meta = resolve_source_document(source, course_hint=explicit_class)
+            if resolved_meta and resolved_meta.get("auto_filled"):
+                print(f"[Auto-Fill] {resolved_meta.get('resolution_reason')}")
+                print(f"[Auto-Fill] Ingesting: {resolved_meta.get('resolved_source')}")
+                source = resolved_meta["resolved_source"]
+                if not explicit_class and resolved_meta.get("course_code"):
+                    explicit_class = resolved_meta["course_code"]
+            elif resolved_meta and resolved_meta.get("resolved_source"):
+                source = resolved_meta["resolved_source"]
+                if not explicit_class and resolved_meta.get("course_code"):
+                    explicit_class = resolved_meta["course_code"]
+        except Exception as e:
+            logger_err = f"[Auto-Fill] Resolution note: {e}"
+            # Continue with raw source if auto-resolution encounters an unhandled case
+
     if is_google_doc_source(source):
         print(f"Extracting highlights from Google Doc: {source}")
         if extract_google_doc_structured is None:
@@ -2221,7 +2249,7 @@ def process_source_and_generate(
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Extract highlights and generate Anki decks named CLASS(with course name):CHAPTER")
-    parser.add_argument("source", metavar="source_or_url", help="Path to local .docx file, Google Docs URL, or Document ID")
+    parser.add_argument("source", nargs="?", default="", metavar="source_or_url", help="Path to local .docx file, Google Docs URL, Document ID, or Course Code (e.g. 'PSYC 3590')")
     parser.add_argument("--deck", help="Explicit deck title (overrides automatic naming)")
     parser.add_argument("--class-name", dest="explicit_class", help="Explicit class code/name (e.g., 'PSYC 3590')")
     parser.add_argument("--chapter", dest="explicit_chapter", help="Explicit chapter/lecture title")
@@ -2237,7 +2265,10 @@ if __name__ == "__main__":
             print("Ollama service offline. Attempting Docker auto-initialization...")
             mgr.ensure_service_ready(auto_start_docker=True)
 
-    input_source = getattr(args, "source", None) or getattr(args, "docx_path", None)
+    input_source = (getattr(args, "source", "") or getattr(args, "docx_path", "") or "").strip()
+    if not input_source and args.explicit_class:
+        input_source = args.explicit_class.strip()
+
     process_source_and_generate(
         input_source,
         deck=args.deck,

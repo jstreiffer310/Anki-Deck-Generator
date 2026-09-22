@@ -29,6 +29,18 @@ CONFIG_PATH = PROJECT_ROOT / "config.json"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Source auto-resolution engine
+try:
+    from scripts.source_resolver import find_primary_document, score_document, lookup_drivefs_doc_id, resolve_source_document
+except ImportError:
+    try:
+        from source_resolver import find_primary_document, score_document, lookup_drivefs_doc_id, resolve_source_document
+    except ImportError:
+        find_primary_document = None
+        score_document = None
+        lookup_drivefs_doc_id = None
+        resolve_source_document = None
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("AnkiDeckUI")
@@ -168,8 +180,28 @@ def discover_classes_and_notes() -> list:
                         "size_bytes": d.stat().st_size
                     })
 
-        # Saved Google Doc URL / ID for this course
+        # Auto-resolve primary document and Google Doc link
+        primary_local = None
+        primary_gdoc = None
+        if find_primary_document is not None:
+            primary_local, primary_gdoc = find_primary_document(p)
+
         saved_gdoc = recent_doc_links.get(course_code, "")
+        if not saved_gdoc and primary_gdoc and lookup_drivefs_doc_id is not None:
+            doc_id = lookup_drivefs_doc_id(primary_gdoc.name, folder_name)
+            if doc_id:
+                saved_gdoc = f"https://docs.google.com/document/d/{doc_id}/edit"
+                recent_doc_links[course_code] = saved_gdoc
+                config["recent_doc_links"] = recent_doc_links
+                save_config(config)
+
+        # Determine preferred ingestion mode
+        if primary_local and score_document and score_document(primary_local, primary_local.suffix.lower()) > 0:
+            preferred_mode = "file"
+        elif saved_gdoc:
+            preferred_mode = "gdoc"
+        else:
+            preferred_mode = "file" if primary_local else "gdoc"
 
         detected_domain = "general"
         try:
@@ -184,6 +216,10 @@ def discover_classes_and_notes() -> list:
             "domain": detected_domain,
             "folder_name": folder_name,
             "folder_path": str(p),
+            "primary_doc_path": str(primary_local) if primary_local else None,
+            "primary_doc_name": primary_local.name if primary_local else None,
+            "primary_gdoc_path": str(primary_gdoc) if primary_gdoc else None,
+            "preferred_mode": preferred_mode,
             "documents": sorted(documents, key=lambda x: (x["is_syllabus"], not "notes" in x["name"].lower(), x["name"])),
             "existing_decks": existing_decks,
             "saved_gdoc_url": saved_gdoc
@@ -223,6 +259,10 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
             self.handle_api_generate()
         elif path == "/api/open_folder":
             self.handle_api_open_folder()
+        elif path == "/api/open_file":
+            self.handle_api_open_file()
+        elif path == "/api/resolve_source":
+            self.handle_api_resolve_source()
         elif path == "/api/save_doc_link":
             self.handle_api_save_doc_link()
         else:
@@ -274,6 +314,37 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
         else:
             self.send_json_response({"success": False, "error": "Path does not exist"}, status=400)
 
+    def handle_api_open_file(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        data = json.loads(body) if body else {}
+        target = data.get("path")
+        
+        if target and Path(target).exists():
+            try:
+                os.startfile(target)
+                self.send_json_response({"success": True})
+            except Exception as e:
+                self.send_json_response({"success": False, "error": str(e)}, status=500)
+        else:
+            self.send_json_response({"success": False, "error": "File does not exist"}, status=400)
+
+    def handle_api_resolve_source(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        data = json.loads(body) if body else {}
+        query = data.get("query")
+        course_hint = data.get("course_hint")
+
+        try:
+            if resolve_source_document is not None:
+                res = resolve_source_document(query, course_hint=course_hint)
+                self.send_json_response({"success": True, "data": res})
+            else:
+                self.send_json_response({"success": False, "error": "Source resolver not available"}, status=500)
+        except Exception as e:
+            self.send_json_response({"success": False, "error": str(e)}, status=400)
+
     def handle_api_save_doc_link(self):
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
@@ -302,6 +373,20 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
         domain = payload.get("domain")
         auto_inject = payload.get("auto_inject", True)
         simple_mode = payload.get("simple_mode", False)
+
+        # Auto-resolve if source is empty or is a course code
+        if (not source or not str(source).strip()) and explicit_class:
+            source = explicit_class
+
+        if resolve_source_document is not None and source:
+            try:
+                res = resolve_source_document(source, course_hint=explicit_class)
+                if res and res.get("resolved_source"):
+                    source = res["resolved_source"]
+                    if not explicit_class and res.get("course_code"):
+                        explicit_class = res["course_code"]
+            except Exception:
+                pass
 
         if not source:
             self.send_json_response({"success": False, "error": "No source file or Google Doc URL provided"}, status=400)

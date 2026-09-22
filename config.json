@@ -7,13 +7,34 @@
       "semantic": "definition",
       "description": "Definition, explanation, mechanism, or meaning of a term or concept",
       "target_card_field": "back",
-      "color_keys": ["green", "lightgreen", "#00FF00", "#B7E1CD", "#81C784", "#A5D6A7", "#C8E6C9", "#E8F5E9", "#00E676", "#69F0AE"]
+      "color_keys": [
+        "green",
+        "lightgreen",
+        "#00FF00",
+        "#B7E1CD",
+        "#81C784",
+        "#A5D6A7",
+        "#C8E6C9",
+        "#E8F5E9",
+        "#00E676",
+        "#69F0AE"
+      ]
     },
     "yellow": {
       "semantic": "important",
       "description": "Important concept, key term, high-yield relationship, threshold, or takeaway",
       "target_card_field": "front_or_active_recall",
-      "color_keys": ["yellow", "#FFFF00", "#FFF2CC", "#FFF176", "#FFF59D", "#FFE082", "#FFEE58", "#FFEB3B", "#FDD835"]
+      "color_keys": [
+        "yellow",
+        "#FFFF00",
+        "#FFF2CC",
+        "#FFF176",
+        "#FFF59D",
+        "#FFE082",
+        "#FFEE58",
+        "#FFEB3B",
+        "#FDD835"
+      ]
     },
     "other": {
       "semantic": "context",
@@ -40,5 +61,11 @@
     "PSYC 2030": "Research Methods",
     "PSYC 2260": "Cognition",
     "NATS 1610": "The Living Body"
+  },
+  "recent_doc_links": {
+    "PSYC 2110": "https://docs.google.com/document/d/1zUJDj_GuMtPVINzUvL8C_LKkYMeId9CJuUEKGo0Dx8Q/edit",
+    "PSYC 3031": "https://docs.google.com/document/d/1rlXWQpQE6eCW9ulrEjblm0LjXktO0aVjrmCLstZkN_k/edit",
+    "PSYC 3590": "https://docs.google.com/document/d/1TA17mmRt0KEqZbjzB1j9b9mTuBbR_5S1tOxlby2Nz4I/edit",
+    "PSYC 3000": "https://docs.google.com/document/d/1YPIcPSSARjJBQtRnIvD30XZia-g_O8m2_6kr-_h2h-A/edit"
   }
 }
