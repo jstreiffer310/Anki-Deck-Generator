@@ -523,10 +523,11 @@ class CardValidator:
         if not is_cloze:
             if q:
                 clean_q = strip_html_tags(q).strip()
-                if len(clean_q) < self.min_front:
+                min_req = 2 if card.get("card_type") == "simple_bidirectional" else self.min_front
+                if len(clean_q) < min_req:
                     issues.append(ValidationIssue(
                         "ERROR", "QUESTION_TOO_SHORT",
-                        f"Question length ({len(clean_q)}) is below minimum {self.min_front} characters."
+                        f"Question length ({len(clean_q)}) is below minimum {min_req} characters."
                     ))
                 if len(q) > self.max_front:
                     issues.append(ValidationIssue(

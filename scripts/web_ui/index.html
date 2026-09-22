@@ -413,6 +413,16 @@
             <label for="checkAutoInject" style="margin: 0; cursor: pointer;">Auto-inject into running Anki Desktop via AnkiConnect</label>
           </div>
 
+          <div class="form-group" style="display: flex; align-items: flex-start; gap: 8px; background: rgba(34, 197, 94, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(34, 197, 94, 0.25);">
+            <input type="checkbox" id="checkSimpleMode" style="width: auto; margin-top: 3px;">
+            <div>
+              <label for="checkSimpleMode" style="margin: 0; font-weight: 600; cursor: pointer;">Simple Recall Mode (Green Definitions Only)</label>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                Generates pure Term ⇄ Definition cards using Anki's native <i>Basic (and reversed card)</i> note type. Automatically buries reverse siblings to prevent back-to-back reviews.
+              </div>
+            </div>
+          </div>
+
           <button class="btn" id="btnGenerate" onclick="generateDeck()">
             <span id="btnText">⚡ Generate & Sync Deck</span>
           </button>
@@ -645,7 +655,8 @@
           course_code: selectedCourse.course_code,
           course_name: selectedCourse.course_title,
           domain: selectedCourse.domain,
-          auto_inject: document.getElementById('checkAutoInject').checked
+          auto_inject: document.getElementById('checkAutoInject').checked,
+          simple_mode: document.getElementById('checkSimpleMode') ? document.getElementById('checkSimpleMode').checked : false
         };
 
         const res = await fetch('/api/generate', {

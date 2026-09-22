@@ -1122,10 +1122,52 @@ ANKI_CLOZE_MODEL = genanki.Model(
     model_type=genanki.Model.CLOZE
 )
 
+# Simple Mode Model — Anki's built-in "Basic (and reversed card)" type.
+# ONE note produces BOTH card directions natively.
+# Anki's sibling-burying feature prevents both appearing in the same study session.
+SIMPLE_ANKI_MODEL = genanki.Model(
+    1847291040,
+    'University Lecture Basic (and reversed card)',
+    fields=[
+        {'name': 'Front'},
+        {'name': 'Back'},
+    ],
+    templates=[
+        {
+            'name': 'Card 1 (Front -> Back)',
+            'qfmt': f'''
+                <div class="question">{{{{Front}}}}</div>
+                {MATHJAX_SCRIPT}
+            ''',
+            'afmt': f'''
+                {{{{FrontSide}}}}
+                <hr id="answer">
+                <div class="answer">{{{{Back}}}}</div>
+                {MATHJAX_SCRIPT}
+            ''',
+        },
+        {
+            'name': 'Card 2 (Back -> Front)',
+            'qfmt': f'''
+                <div class="question">{{{{Back}}}}</div>
+                {MATHJAX_SCRIPT}
+            ''',
+            'afmt': f'''
+                {{{{FrontSide}}}}
+                <hr id="answer">
+                <div class="answer">{{{{Front}}}}</div>
+                {MATHJAX_SCRIPT}
+            ''',
+        },
+    ],
+    css=ANKI_CSS
+)
+
 def create_deck_package(deck_title, cards, output_filename=None):
     """
     Compiles a list of cards into an Anki .apkg file.
-    Supports both Standard Q/A (ANKI_MODEL) and Cloze deletion (ANKI_CLOZE_MODEL) cards.
+    Supports Standard Q/A (ANKI_MODEL), Cloze deletion (ANKI_CLOZE_MODEL),
+    and Simple Bidirectional Basic/Reversed (SIMPLE_ANKI_MODEL) notes.
     cards: list of dicts with keys: question, answer, category_badge, context, tags
     """
     deck_id = random.randrange(1 << 30, 1 << 31)
@@ -1140,7 +1182,18 @@ def create_deck_package(deck_title, cards, output_filename=None):
 
         is_cloze = (card_type == "cloze") or ("{{c1::" in cloze_text)
 
-        if is_cloze:
+        if card_type == "simple_bidirectional":
+            front_text = c.get("front") or c.get("question", "")
+            back_text = c.get("back") or c.get("answer", "")
+            note = genanki.Note(
+                model=SIMPLE_ANKI_MODEL,
+                fields=[
+                    front_text,
+                    back_text,
+                ],
+                tags=tags
+            )
+        elif is_cloze:
             note = genanki.Note(
                 model=ANKI_CLOZE_MODEL,
                 fields=[
@@ -1167,11 +1220,15 @@ def create_deck_package(deck_title, cards, output_filename=None):
     out_dir = Path(CONFIG.get("output_directory", PROJECT_ROOT / "Decks"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not output_filename:
-        safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', deck_title)
-        output_filename = f"{safe_title}.apkg"
+    if output_filename and Path(output_filename).is_absolute():
+        out_path = Path(output_filename)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        if not output_filename:
+            safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', deck_title)
+            output_filename = f"{safe_title}.apkg"
+        out_path = out_dir / output_filename
 
-    out_path = out_dir / output_filename
     package = genanki.Package(deck)
     package.write_to_file(str(out_path))
     print(f"Successfully generated Anki deck: {out_path} ({len(cards)} cards)")
@@ -1181,10 +1238,14 @@ def create_deck_package(deck_title, cards, output_filename=None):
     if gdrive_dir:
         gdrive_path = Path(gdrive_dir)
         if gdrive_path.exists():
-            import shutil
-            dest_gdrive = gdrive_path / output_filename
-            shutil.copy2(out_path, dest_gdrive)
-            print(f"Synced to Google Drive: {dest_gdrive}")
+            dest_gdrive = gdrive_path / out_path.name
+            try:
+                if out_path.resolve() != dest_gdrive.resolve():
+                    import shutil
+                    shutil.copy2(out_path, dest_gdrive)
+                    print(f"Synced to Google Drive: {dest_gdrive}")
+            except Exception as e:
+                print(f"Warning: Could not sync to Google Drive: {e}")
 
     return out_path
 
@@ -1192,12 +1253,62 @@ def clean_phrase(text):
     if not text:
         return ""
     # Strip bullet symbols or numbered list prefixes without stripping drug alphanumeric names (e.g. 5-HT2A)
-    t = re.sub(r'^(?:[•\*\—\–]|\s*-\s+|\d+[\.\)]\s+)+', '', text.strip())
+    t = re.sub(r'^(?:[•\*\—\–]|\s*-\s+|\d+[.)\]\s]+)+', '', text.strip())
     t = re.sub(r'^(is defined as|represents|is|refers to|means)\s+', '', t, flags=re.IGNORECASE)
     t = re.sub(r'\s+', ' ', t).strip()
     return t.rstrip(':-–— \t')
 
-def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str = "general"):
+# ---------------------------------------------------------------------------
+# Fix 1: Trailing-space-before-? sanitizer
+# Cosmetic guard: strips any " ?" → "?" in generated question strings.
+# ---------------------------------------------------------------------------
+_TRAILING_SPACE_QUESTION = re.compile(r'\s+\?')
+
+def _sanitize_question(q: str) -> str:
+    """Remove spurious whitespace immediately before '?' in a question string."""
+    return _TRAILING_SPACE_QUESTION.sub('?', q) if q else q
+
+# ---------------------------------------------------------------------------
+# Fix 3: Truncation guard
+# Detects field values that end mid-sentence (comma, dangling preposition, etc.)
+# and rejects the card before it enters the deck.
+# ---------------------------------------------------------------------------
+_TRUNCATED_ENDINGS = re.compile(
+    r'[,]\s*\.?\s*$'                                    # ends with bare comma or ",."
+    r'|\s+(?:an|a|the|of|in|on|by|to|for|with|from|and|or)\s*[?.!]?\s*$',
+    re.IGNORECASE
+)
+
+def _is_truncated(text: str) -> bool:
+    """Return True if text appears to have been cut off mid-sentence."""
+    if not text:
+        return False
+    # Strip HTML tags before checking to avoid false positives on e.g. </i>
+    plain = re.sub(r'<[^>]+>', '', text).strip()
+    return bool(_TRUNCATED_ENDINGS.search(plain))
+
+def _is_valid_card_fields(front: str, back: str) -> bool:
+    """
+    Pre-commit validity guard: rejects clearly broken/truncated cards.
+    Rules:
+      - front must be >= 2 chars, back must be >= 3 chars after stripping
+      - front must not end with a bare preposition/article (of, an, the, a, in, on, by)
+      - back must not start with a comma or period
+    """
+    f = front.strip()
+    b = back.strip()
+    if len(f) < 2 or len(b) < 3:
+        return False
+    # Front ends with a dangling preposition/article (truncated phrase)
+    if re.search(r'\b(?:of|an|the|a|in|on|by|for|to|at|as|or)\s*$', f, re.IGNORECASE):
+        return False
+    # Back starts with comma or period (content got mangled)
+    if re.match(r'^[,\.]', b):
+        return False
+    return True
+
+
+def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str = "general", simple_mode: bool = False):
     """
     Transforms extracted highlights into atomic recall flashcards based on
     SuperMemo's 20 Rules and ANKI_SOP Keyword-Descriptor standards:
@@ -1205,6 +1316,14 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
     - Yellow = Important (Concept / Takeaway / Threshold)
     - Other = Context / Nuance
     Supports subject-aware domain specialization (statistics, pharmacology, developmental psychology, etc.).
+
+    When simple_mode=True:
+      - Only green highlights are processed
+      - Each green highlight that contains a clear Term: Definition split (or can be resolved
+        to keyword + descriptor) is emitted as a single 'simple_bidirectional' note using
+        Anki's built-in Basic (and reversed card) model.
+      - Skip: active recall cards, badge-important cards, standalone yellows, any card whose
+        front field fails is_valid_concept_keyword().
     """
     cards = []
     if deck_tags is None:
@@ -1250,6 +1369,95 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         yellows = [h["text"].strip() for h in valid_highlights if h["category"] == "yellow"]
         greens = [h["text"].strip() for h in valid_highlights if h["category"] == "green"]
         others = [h["text"].strip() for h in valid_highlights if h["category"] == "other"]
+
+        # ── SIMPLE MODE ──────────────────────────────────────────────────────────
+        # Generate one Basic (and reversed card) note per green definition.
+        # Skips yellows, badge-important, active-recall, and broken cards.
+        if simple_mode:
+            for g_def in greens:
+                raw_g = clean_phrase(g_def)
+                if not raw_g:
+                    continue
+
+                kw = None
+                desc = None
+
+                # Check 1: Does green highlight itself have an explicit "Term: Definition" colon split?
+                # e.g. "Addiction: A chronic, relapsing condition..." or "Drug: Any substance..."
+                colon_match = re.match(r'^([A-Z0-9][a-zA-Z0-9\s\(\)\'/-]{1,50}):\s+(.*)', raw_g, re.DOTALL)
+                if colon_match:
+                    cand_kw = colon_match.group(1).strip().rstrip(':-–— \t')
+                    cand_desc = colon_match.group(2).strip()
+                    if is_valid_concept_keyword(cand_kw):
+                        kw = cand_kw
+                        desc = cand_desc
+
+                # Check 2: If no colon split, is there an explicit paired yellow keyword?
+                if not kw and yellows:
+                    clean_y = clean_phrase(yellows[0]).rstrip(':-–— \t')
+                    words_y = clean_y.split()
+                    if words_y and words_y[0].upper() not in ('RECALL', 'NOTE', 'REMEMBER', 'REVIEW', 'SUMMARY'):
+                        if is_valid_concept_keyword(clean_y):
+                            kw = clean_y
+                            desc = raw_g
+
+                # Check 3: Inline linking verb split
+                if not kw:
+                    internal_match = re.search(
+                        r'^([A-Z0-9][a-zA-Z0-9\s\(\)\'/-]{1,50})'
+                        r'(?:\s+is defined as|\s+is|\s+are|\s+focuses on|\s+represents|\s+refers to|\s+means|\s+involves)\s+(.*)',
+                        raw_g, re.IGNORECASE | re.DOTALL
+                    )
+                    if internal_match:
+                        cand_kw = internal_match.group(1).strip().rstrip(':-–— \t')
+                        cand_desc = internal_match.group(2).strip()
+                        if is_valid_concept_keyword(cand_kw):
+                            kw = cand_kw
+                            desc = cand_desc
+
+                # Check 4: Fallback to heading if heading is a specific concept (not "General" or lecture/topic title)
+                if not kw and heading and heading != "General":
+                    if not re.search(r'^(?:TOPIC\s*\d+|Lecture\s*\d+|Chapter\s*\d+|Ch\s*\d+)', heading, re.IGNORECASE):
+                        clean_h = heading.strip().rstrip(':-–— \t')
+                        if is_valid_concept_keyword(clean_h):
+                            kw = clean_h
+                            desc = raw_g
+
+                if not kw or not desc:
+                    continue
+
+                kw = kw.strip().rstrip(':-–— \t')
+                desc = desc.strip()
+
+                # Validity: term must pass keyword rules
+                if is_valid_concept_keyword and not is_valid_concept_keyword(kw):
+                    continue
+
+                # Validity: field-level sanity check (catches truncated/broken content)
+                if not _is_valid_card_fields(kw, desc):
+                    continue
+
+                # Clean up descriptor: ensure first letter is capitalized and ends with period
+                if desc and desc[0].islower():
+                    desc = desc[0].upper() + desc[1:]
+                if desc and not desc.endswith(('.', '!', '?')):
+                    desc += '.'
+
+                cards.append({
+                    "card_type": "simple_bidirectional",
+                    "keyword": kw,
+                    "descriptor": desc,
+                    "front": kw,
+                    "back": desc,
+                    # Provide question/answer so UI metrics still work
+                    "question": kw,
+                    "answer": desc,
+                    "category_badge": "badge-definition",
+                    "context": heading,
+                    "tags": list(dict.fromkeys(tags + ["simple_mode", "definition"]))
+                })
+            continue  # done with this item in simple mode
+        # ── END SIMPLE MODE ──────────────────────────────────────────────────────
 
         context_extra = " | ".join(others) if others else ""
 
@@ -1371,23 +1579,28 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                     clean_d = clean_g[0].upper() + clean_g[1:] if clean_g else ""
                     if not clean_d.endswith(('.', '!', '?')):
                         clean_d += '.'
+                    # Fix 3: Truncation guard
+                    if _is_truncated(clean_d) or _is_truncated(anchor_topic):
+                        continue
+                    _fwd_q0 = _sanitize_question(f"What is the definition of <b>{anchor_topic}</b>?")
                     cards.append({
                         "card_type": "bidirectional_definition",
                         "taxonomy": "term_definition",
                         "keyword": anchor_topic,
                         "descriptor": clean_d,
-                        "question": f"What is the definition of <b>{anchor_topic}</b>?",
+                        "question": _fwd_q0,
                         "answer": clean_d,
                         "category_badge": "badge-definition",
                         "context": context_extra or heading,
                         "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
                     })
+                    # Fix 4: Reverse card front is plain definition text
                     cards.append({
                         "card_type": "bidirectional_definition",
                         "taxonomy": "term_definition",
                         "keyword": anchor_topic,
                         "descriptor": clean_d,
-                        "question": f"What term is defined by:<br><i>{clean_d}</i>",
+                        "question": f"<i>{clean_d}</i>",
                         "answer": anchor_topic,
                         "category_badge": "badge-definition",
                         "context": context_extra or heading,
@@ -1406,19 +1619,35 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                 if not resolved_kw or not resolved_desc:
                     continue
 
+                # Fix 2: Heading-as-keyword gate — a section heading is not a concept keyword.
+                # Normalize both sides (strip case/whitespace) before comparing.
+                _norm_kw = re.sub(r'\s+', ' ', resolved_kw).strip().lower()
+                _norm_heading = re.sub(r'\s+', ' ', heading).strip().lower()
+                if _norm_kw == _norm_heading:
+                    continue  # keyword IS the heading → not a learnable concept card
+
+                # Fix 3: Truncation guard — skip cards with fields cut off mid-sentence.
+                _fwd_q = _sanitize_question(f"What is the definition of <b>{resolved_kw}</b>?")
+                if _is_truncated(resolved_kw) or _is_truncated(resolved_desc):
+                    continue
+                # Task 3: Pre-commit validity check (dangling prepositions, comma-starts, too short)
+                if not _is_valid_card_fields(resolved_kw, resolved_desc):
+                    continue
+
                 # Card 1: Forward (Recall: Term -> Definition)
                 cards.append({
                     "card_type": "bidirectional_definition",
                     "taxonomy": "term_definition",
                     "keyword": resolved_kw,
                     "descriptor": resolved_desc,
-                    "question": f"What is the definition of <b>{resolved_kw}</b>?",
+                    "question": _fwd_q,
                     "answer": resolved_desc,
                     "category_badge": "badge-definition",
                     "context": context_extra or heading,
                     "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
                 })
-                # Card 2: Reverse (Recognition: Definition -> Term)
+                # Fix 4: Reverse card front is the plain definition text (no "What term is defined by:" wrapper).
+                # The user sees the definition and recalls the term — more natural recognition flow.
                 cards.append({
                     "card_type": "bidirectional_definition",
                     "taxonomy": "term_definition",
@@ -1560,23 +1789,37 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                             subject = "Key Principle"
 
                     if subject and clean_g and clean_g.strip():
+                        # Fix 2: Heading-as-keyword gate
+                        _norm_subj = re.sub(r'\s+', ' ', subject).strip().lower()
+                        _norm_h = re.sub(r'\s+', ' ', heading).strip().lower()
+                        if _norm_subj == _norm_h:
+                            continue  # keyword == heading → skip
+                        # Fix 3: Truncation guard
+                        if _is_truncated(subject) or _is_truncated(clean_g):
+                            continue
+                        # Task 3: Pre-commit validity check (catches dangling prepositions, comma-starts)
+                        if not _is_valid_card_fields(subject, clean_g):
+                            continue
+                        _fwd_q2 = _sanitize_question(f"What is the definition of <b>{subject}</b>?")
                         cards.append({
                             "card_type": "bidirectional_definition",
                             "taxonomy": "term_definition",
                             "keyword": subject,
                             "descriptor": clean_g,
-                            "question": f"What is the definition of <b>{subject}</b>?",
+                            "question": _fwd_q2,
                             "answer": clean_g,
                             "category_badge": "badge-definition",
                             "context": context_extra or heading,
                             "tags": list(dict.fromkeys(tags + ["definition", "forward"]))
                         })
+                        # Fix 4: Reverse card front is the plain definition text
                         cards.append({
                             "card_type": "bidirectional_definition",
                             "taxonomy": "term_definition",
                             "keyword": subject,
                             "descriptor": clean_g,
-                            "question": f"What term is defined by:<br><i>{clean_g}</i>",
+                            # Reverse: plain definition text as front — user recalls the term naturally
+                            "question": f"<i>{clean_g}</i>",
                             "answer": subject,
                             "category_badge": "badge-definition",
                             "context": context_extra or heading,
@@ -1664,6 +1907,14 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
             kw = c.get("keyword", "")
             desc = c.get("descriptor", "")
             c["taxonomy"] = classify_cognitive_taxonomy(kw, desc, context=c.get("context", ""), domain=domain)
+        # Fix 1: Strip any spurious whitespace before '?' in the question field.
+        if "question" in c:
+            c["question"] = _sanitize_question(c["question"])
+        # Fix 3: Final truncation guard — reject cards with cut-off fronts or answers.
+        _q_plain = re.sub(r'<[^>]+>', '', c.get("question", "")).strip()
+        _a_plain = re.sub(r'<[^>]+>', '', c.get("answer", "")).strip()
+        if _is_truncated(_q_plain) or _is_truncated(_a_plain):
+            continue
         validated_cards.append(c)
 
     if remove_duplicate_cards is not None:
@@ -1878,12 +2129,17 @@ def process_source_and_generate(
     explicit_chapter: Optional[str] = None,
     deck_tags: Optional[List[str]] = None,
     auto_inject: bool = True,
-    domain: Optional[str] = None
+    domain: Optional[str] = None,
+    simple_mode: bool = False
 ) -> Tuple[Path, str, List[Dict[str, Any]]]:
     """
     Unified ingestion and generation pipeline for Google Docs (URL or ID) or local .docx.
     Extracts title, headings, and highlights, resolves deck name, detects domain,
     synthesizes cards, compiles .apkg package, and optionally injects via AnkiConnect.
+
+    When simple_mode=True, only green definition highlights are processed and each
+    pair becomes a single Basic (and reversed card) note in Anki (one note → two native
+    card directions, with sibling burying preventing both in the same session).
 
     Returns:
         (out_apkg_path, deck_title, cards)
@@ -1944,7 +2200,7 @@ def process_source_and_generate(
     print(f"Output File: '{safe_filename}'")
 
     tags = deck_tags if deck_tags is not None else ["lecture_notes"]
-    cards = synthesize_cards(data, deck_tags=tags, domain=detected_domain)
+    cards = synthesize_cards(data, deck_tags=tags, domain=detected_domain, simple_mode=simple_mode)
     print(f"Synthesized {len(cards)} atomic flashcards.")
 
     for i, c in enumerate(cards, 1):
@@ -1970,6 +2226,7 @@ if __name__ == "__main__":
     parser.add_argument("--class-name", dest="explicit_class", help="Explicit class code/name (e.g., 'PSYC 3590')")
     parser.add_argument("--chapter", dest="explicit_chapter", help="Explicit chapter/lecture title")
     parser.add_argument("--domain", choices=["statistics", "pharmacology", "developmental_psychology", "professionalism", "neuroscience", "cognition", "general"], help="Explicitly specify course domain")
+    parser.add_argument("--simple", action="store_true", help="Simple mode: green definitions only, compiled into Basic (and reversed card) notes")
     parser.add_argument("--init-ollama", action="store_true", help="Auto-start Docker / Ollama container if offline")
     parser.add_argument("--no-inject", action="store_true", help="Skip auto-injection into Anki via AnkiConnect")
     args = parser.parse_args()
@@ -1988,7 +2245,8 @@ if __name__ == "__main__":
         explicit_chapter=args.explicit_chapter,
         deck_tags=["lecture_notes"],
         auto_inject=not getattr(args, "no_inject", False),
-        domain=args.domain
+        domain=args.domain,
+        simple_mode=getattr(args, "simple", False)
     )
 
 

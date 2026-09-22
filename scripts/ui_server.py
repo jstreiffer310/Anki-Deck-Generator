@@ -301,6 +301,7 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
         explicit_chapter = payload.get("chapter")
         domain = payload.get("domain")
         auto_inject = payload.get("auto_inject", True)
+        simple_mode = payload.get("simple_mode", False)
 
         if not source:
             self.send_json_response({"success": False, "error": "No source file or Google Doc URL provided"}, status=400)
@@ -321,7 +322,8 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
                 explicit_class=explicit_class,
                 explicit_chapter=explicit_chapter,
                 auto_inject=auto_inject,
-                domain=domain
+                domain=domain,
+                simple_mode=simple_mode
             )
 
             # Calculate SuperMemo atomicity & quality metrics
