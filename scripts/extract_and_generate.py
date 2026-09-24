@@ -1413,12 +1413,12 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                 kw = None
                 desc = None
 
-                # Check 1: Does green highlight itself have an explicit "Term: Definition" colon split?
-                # e.g. "Addiction: A chronic, relapsing condition..." or "Drug: Any substance..."
-                colon_match = re.match(r'^([A-Z0-9][a-zA-Z0-9\s\(\)\'/-]{1,50}):\s+(.*)', raw_g, re.DOTALL)
-                if colon_match:
-                    cand_kw = colon_match.group(1).strip().rstrip(':-–— \t')
-                    cand_desc = colon_match.group(2).strip()
+                # Check 1: Does green highlight itself have an explicit "Term: Definition" or "Term – Definition" split?
+                # e.g. "Addiction: A chronic, relapsing condition...", "Culture – the shared physical..."
+                separator_match = re.match(r'^([A-Z0-9][a-zA-Z0-9\s\(\)\'/]{1,50})(?::|\s+[-–—])\s+(.*)', raw_g, re.DOTALL)
+                if separator_match:
+                    cand_kw = separator_match.group(1).strip().rstrip(':-–— \t')
+                    cand_desc = separator_match.group(2).strip()
                     if is_valid_concept_keyword(cand_kw):
                         kw = cand_kw
                         desc = cand_desc

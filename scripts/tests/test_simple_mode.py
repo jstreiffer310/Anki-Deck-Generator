@@ -43,6 +43,28 @@ def test_simple_mode_colon_split():
     assert c["category_badge"] == "badge-definition"
     assert "simple_mode" in c["tags"]
 
+def test_simple_mode_typographic_dash_split():
+    structured_data = [
+        {
+            "heading": "What is Culture?",
+            "heading_hierarchy": ["Ch1", "Lecture 1"],
+            "full_paragraph": "Culture – the shared physical, behavioural, or symbolic features of a community.",
+            "highlights": [
+                {
+                    "category": "green",
+                    "text": "Culture – the shared physical, behavioural, or symbolic features of a community."
+                }
+            ]
+        }
+    ]
+
+    cards = synthesize_cards(structured_data, simple_mode=True)
+    assert len(cards) == 1
+    c = cards[0]
+    assert c["card_type"] == "simple_bidirectional"
+    assert c["front"] == "Culture"
+    assert "The shared physical, behavioural, or symbolic features" in c["back"]
+
 def test_simple_mode_ignores_study_notes():
     structured_data = [
         {
