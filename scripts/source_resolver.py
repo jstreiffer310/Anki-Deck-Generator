@@ -151,8 +151,13 @@ def score_document(file_path: Union[str, Path], ext: str, size_bytes: int = 0) -
     if any(k in parts_lower for k in ["assignments", "assignment", "rubric", "rubrics", "exercises", "supplimental resources", "resources"]):
         return -100
 
-    # Strong disqualifiers / syllabus penalty
-    if any(k in nl for k in ["syllabus", "course outline", "schedule", "rubric", "assignment", "activity", "outline", "information sheet"]):
+    # Strong disqualifiers / syllabus / admin forms penalty
+    if any(k in nl for k in [
+        "syllabus", "course outline", "schedule", "rubric", "assignment",
+        "activity", "outline", "information sheet", "checklist", "expectation",
+        "expectations", "handbook", "template", "agreement", "contract",
+        "guidelines", "guide", "form", "evaluation"
+    ]):
         return -100
 
     # Notes identifiers

@@ -425,6 +425,16 @@
             <label for="checkAutoInject" style="margin: 0; cursor: pointer;">Auto-inject into running Anki Desktop via AnkiConnect</label>
           </div>
 
+          <div class="form-group" style="display: flex; align-items: flex-start; gap: 8px; background: rgba(56, 189, 248, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.25);">
+            <input type="checkbox" id="checkPreserveExisting" checked style="width: auto; margin-top: 3px;">
+            <div>
+              <label for="checkPreserveExisting" style="margin: 0; font-weight: 600; cursor: pointer; color: #38bdf8;">🛡️ Never Overwrite Manual Cards (Pre-Flight Protection)</label>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                Queries your Anki collection before generating and automatically skips any card or concept you already have, preserving manual cards and custom edits with zero duplication.
+              </div>
+            </div>
+          </div>
+
           <div class="form-group" style="display: flex; align-items: flex-start; gap: 8px; background: rgba(34, 197, 94, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(34, 197, 94, 0.25);">
             <input type="checkbox" id="checkSimpleMode" style="width: auto; margin-top: 3px;">
             <div>
@@ -721,7 +731,8 @@
           course_name: selectedCourse.course_title,
           domain: selectedCourse.domain,
           auto_inject: document.getElementById('checkAutoInject').checked,
-          simple_mode: document.getElementById('checkSimpleMode') ? document.getElementById('checkSimpleMode').checked : false
+          simple_mode: document.getElementById('checkSimpleMode') ? document.getElementById('checkSimpleMode').checked : false,
+          preserve_existing: document.getElementById('checkPreserveExisting') ? document.getElementById('checkPreserveExisting').checked : true
         };
 
         const res = await fetch('/api/generate', {

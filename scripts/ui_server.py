@@ -373,6 +373,7 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
         domain = payload.get("domain")
         auto_inject = payload.get("auto_inject", True)
         simple_mode = payload.get("simple_mode", False)
+        preserve_existing = payload.get("preserve_existing", True)
 
         # Auto-resolve if source is empty or is a course code
         if (not source or not str(source).strip()) and explicit_class:
@@ -408,7 +409,8 @@ class DeckCreatorHandler(BaseHTTPRequestHandler):
                 explicit_chapter=explicit_chapter,
                 auto_inject=auto_inject,
                 domain=domain,
-                simple_mode=simple_mode
+                simple_mode=simple_mode,
+                preserve_existing=preserve_existing
             )
 
             # Calculate SuperMemo atomicity & quality metrics
