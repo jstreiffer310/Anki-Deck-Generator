@@ -282,8 +282,9 @@ class OllamaRuntimeManager:
         prompt: str,
         system_prompt: str = "",
         model: Optional[str] = None,
-        timeout: float = 30.0,
+        timeout: float = 35.0,
         temperature: float = 0.1,
+        _retry: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """
         Invokes Ollama's /api/generate endpoint with format="json" and returns
@@ -293,7 +294,7 @@ class OllamaRuntimeManager:
             prompt: User/input prompt for the LLM.
             system_prompt: Optional system prompt to steer formulation.
             model: Specific model identifier. Defaults to self.model.
-            timeout: Maximum seconds to wait for generation.
+            timeout: Maximum seconds to wait for generation (default: 35.0s).
             temperature: Sampling temperature (default: 0.1 for deterministic extraction).
 
         Returns:
@@ -306,7 +307,8 @@ class OllamaRuntimeManager:
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": temperature
+                "temperature": temperature,
+                "num_predict": 512,
             }
         }
         if system_prompt:
@@ -344,8 +346,17 @@ class OllamaRuntimeManager:
                 logger.warning("[OLLAMA] Model response is not a JSON object: %s", type(parsed))
                 return None
 
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as e:
-            logger.warning("[OLLAMA] HTTP / Network error during generation: %s", e)
+        except urllib.error.HTTPError as e:
+            if e.code == 404 and _retry:
+                logger.info("[OLLAMA] Model '%s' returned 404. Attempting to auto-pull...", target_model)
+                if self.ensure_model_available(target_model):
+                    return self.generate_json(
+                        prompt, system_prompt, model, timeout, temperature, _retry=False
+                    )
+            logger.warning("[OLLAMA] HTTP error during generation: %s", e)
+            return None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            logger.warning("[OLLAMA] Network error during generation: %s", e)
             return None
         except json.JSONDecodeError as e:
             logger.warning("[OLLAMA] Failed to decode JSON from model response: %s", e)

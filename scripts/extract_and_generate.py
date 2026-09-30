@@ -30,6 +30,14 @@ except ImportError:
         OllamaRuntimeManager = None
 
 try:
+    from scripts.auto_extractor import SyllabusDrivenExtractor
+except ImportError:
+    try:
+        from auto_extractor import SyllabusDrivenExtractor
+    except ImportError:
+        SyllabusDrivenExtractor = None
+
+try:
     from scripts.semantic_parser import (
         SemanticCardParser,
         clean_phrase as semantic_clean_phrase,
@@ -1157,6 +1165,7 @@ SIMPLE_ANKI_MODEL = genanki.Model(
         {
             'name': 'Card 1 (Front -> Back)',
             'qfmt': f'''
+                <div class="instruction" style="color: #888; font-size: 0.8em; margin-bottom: 5px;">Define:</div>
                 <div class="question">{{{{Front}}}}</div>
                 {MATHJAX_SCRIPT}
             ''',
@@ -1170,6 +1179,7 @@ SIMPLE_ANKI_MODEL = genanki.Model(
         {
             'name': 'Card 2 (Back -> Front)',
             'qfmt': f'''
+                <div class="instruction" style="color: #888; font-size: 0.8em; margin-bottom: 5px;">What term is defined by:</div>
                 <div class="question">{{{{Back}}}}</div>
                 {MATHJAX_SCRIPT}
             ''',
@@ -1198,6 +1208,7 @@ def create_deck_package(deck_title, cards, output_filename=None):
         badge = c.get("category_badge", "")
         context = c.get("context", "")
         tags = list(c.get("tags", []))
+        tags = [re.sub(r'\s+', '_', t) for t in tags]
         for t in ["pipeline_generated", "auto_generated"]:
             if t not in tags:
                 tags.append(t)
@@ -2108,8 +2119,8 @@ def resolve_deck_naming(
             else:
                 chapter_name = str(source_path_or_id)
 
-    # Format: CLASS(with course name):CHAPTER
-    deck_title = f"{class_str}:{chapter_name}"
+    # Format: CLASS(with course name)::CHAPTER
+    deck_title = f"{class_str}::{chapter_name}"
 
     # Clean filename for Windows (Windows forbids ':' in file paths)
     safe_clean_class = re.sub(r'[^a-zA-Z0-9_\-]', '_', class_str)
@@ -2162,7 +2173,9 @@ def process_source_and_generate(
     auto_inject: bool = True,
     domain: Optional[str] = None,
     simple_mode: bool = False,
-    preserve_existing: Optional[bool] = None
+    preserve_existing: Optional[bool] = None,
+    auto_extract: bool = False,
+    syllabus: Optional[str] = None
 ) -> Tuple[Path, str, List[Dict[str, Any]]]:
     """
     Unified ingestion and generation pipeline for Google Docs (URL or ID) or local .docx.
@@ -2198,7 +2211,98 @@ def process_source_and_generate(
             logger_err = f"[Auto-Fill] Resolution note: {e}"
             # Continue with raw source if auto-resolution encounters an unhandled case
 
-    if is_google_doc_source(source):
+    if auto_extract:
+        if SyllabusDrivenExtractor is None or OllamaRuntimeManager is None:
+            raise ImportError("SyllabusDrivenExtractor or OllamaRuntimeManager is not available.")
+        print(f"Auto-extracting highlights from: {source}")
+        raw_text = ""
+        doc_title = None
+        if is_google_doc_source(source):
+            if extract_document_id is None:
+                raise ImportError("Google Docs API client is not available.")
+            from googleapiclient.discovery import build
+            try:
+                from scripts.docs_api_client import get_credentials, extract_paragraphs_from_elements
+            except ImportError:
+                from docs_api_client import get_credentials, extract_paragraphs_from_elements
+            doc_id = extract_document_id(source)
+            service = build("docs", "v1", credentials=get_credentials())
+            document = service.documents().get(documentId=doc_id).execute()
+            doc_title = document.get("title", "")
+            contents = [document['body'].get('content', [])] if 'body' in document else []
+            paragraphs = []
+            for c in contents:
+                paragraphs.extend(extract_paragraphs_from_elements(c))
+            full_text_lines = []
+            for p in paragraphs:
+                elements = p.get('elements', [])
+                text_runs = [el['textRun'] for el in elements if 'textRun' in el]
+                text = "".join(tr.get('content', '') for tr in text_runs).strip()
+                if text:
+                    full_text_lines.append(text)
+            raw_text = "\n\n".join(full_text_lines)
+        elif str(source).lower().endswith((".r", ".rmd")):
+            try:
+                doc_title = Path(source).stem
+                raw_text = Path(source).read_text(encoding="utf-8")
+            except Exception:
+                raw_text = ""
+        else:
+            if str(source).lower().endswith(".docx"):
+                import docx
+                doc = docx.Document(source)
+                raw_text = "\n\n".join([p.text.strip() for p in doc.paragraphs if p.text.strip()])
+                doc_title = Path(source).stem
+            else:
+                try:
+                    with open(source, "r", encoding="utf-8") as f:
+                        raw_text = f.read()
+                    doc_title = Path(source).stem
+                except Exception:
+                    raw_text = ""
+                    doc_title = None
+
+        syllabus_text = ""
+        if syllabus:
+            if syllabus.lower().endswith(".docx"):
+                import docx
+                try:
+                    s_doc = docx.Document(syllabus)
+                    s_lines = [p.text.strip() for p in s_doc.paragraphs if p.text.strip()]
+                    for table in s_doc.tables:
+                        for row in table.rows:
+                            row_txt = " | ".join(c.text.strip().replace("\n", " ") for c in row.cells if c.text.strip())
+                            if row_txt:
+                                s_lines.append(row_txt)
+                    syllabus_text = "\n".join(s_lines)
+                except Exception:
+                    pass
+            else:
+                try:
+                    with open(syllabus, "r", encoding="utf-8") as f:
+                        syllabus_text = f.read()
+                except Exception as e:
+                    print(f"Warning: Could not read syllabus {syllabus}: {e}")
+
+        runtime_mgr = OllamaRuntimeManager()
+        if not runtime_mgr.is_service_ready():
+            runtime_mgr.ensure_service_ready(auto_start_docker=True)
+            
+        extractor = SyllabusDrivenExtractor(runtime_mgr)
+        virtual_hls = extractor.extract_virtual_highlights(syllabus_text, raw_text)
+        
+        data = []
+        for vh in virtual_hls:
+            data.append({
+                "heading": vh.get("heading", "General"),
+                "full_paragraph": vh.get("text", ""),
+                "highlights": [{
+                    "raw_color": vh.get("color", "yellow"),
+                    "category": vh.get("color", "yellow"),
+                    "text": vh.get("text", "")
+                }]
+            })
+    elif is_google_doc_source(source):
         print(f"Extracting highlights from Google Doc: {source}")
         if extract_google_doc_structured is None:
             raise ImportError("Google Docs API client is not available. Ensure google-api-python-client is installed.")
@@ -2301,6 +2405,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-preserve", action="store_true", help="Force generating cards even if concepts already exist in your Anki collection")
     parser.add_argument("--init-ollama", action="store_true", help="Auto-start Docker / Ollama container if offline")
     parser.add_argument("--no-inject", action="store_true", help="Skip auto-injection into Anki via AnkiConnect")
+    parser.add_argument("--auto-extract", action="store_true", help="Enable LLM-driven auto-extraction of concepts (ignores physical highlights)")
+    parser.add_argument("--syllabus", help="Path to syllabus file (.txt or .docx) for guided auto-extraction")
     args = parser.parse_args()
 
     if getattr(args, "init_ollama", False) and OllamaRuntimeManager is not None:
@@ -2322,7 +2428,9 @@ if __name__ == "__main__":
         auto_inject=not getattr(args, "no_inject", False),
         domain=args.domain,
         simple_mode=getattr(args, "simple", False),
-        preserve_existing=not getattr(args, "no_preserve", False)
+        preserve_existing=not getattr(args, "no_preserve", False),
+        auto_extract=getattr(args, "auto_extract", False),
+        syllabus=getattr(args, "syllabus", None)
     )
 
 

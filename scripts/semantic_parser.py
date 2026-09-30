@@ -294,6 +294,12 @@ STRICT OPERATIONAL RULES:
    - Developmental Stage & Milestone: For psychological stages (Piaget, Erikson) and chronological age milestones.
    - Experimental Paradigm: For experimental designs (e.g. Strange Situation, Visual Cliff) testing specific constructs.
    - Ethical Dilemma & Rule: For professional codes of conduct (e.g. CPA principles) and precedence rules.
+
+8. GLOBAL DIRECTIVE - APPLICATION OVER ROTE MEMORIZATION:
+   - For content-based courses (biology, psychology, pharmacology, etc.), actively transform rote factual highlights into APPLICATION-BASED, SCENARIO-DRIVEN questions.
+   - Instead of asking purely for a definition, require the user to apply the concept to a concrete clinical case, real-world example, or physiological mechanic.
+   - Automatically embed or request concrete examples for mechanisms, phases, stages, and types.
+   - CRITICAL REQUIREMENT: Every generated question MUST explicitly prompt for a concrete example, clinical application, or scenario, and the answer MUST provide one.
 """
 
 def get_domain_system_prompt(domain: str = "general") -> str:
@@ -317,9 +323,12 @@ DOMAIN INSTRUCTIONS — STATISTICS & QUANTITATIVE METHODS (PSYC 3031):
 """,
         "pharmacology": """
 DOMAIN INSTRUCTIONS — PHARMACOLOGY (PSYC 3590):
-1. RECEPTOR MECHANISMS: Test agonist, antagonist, allosteric modulator kinetics.
-2. PHARMACOKINETICS / DYNAMICS: Focus on affinity, efficacy, half-life ($t_{1/2}$), $ED_{50}$, therapeutic index.
-3. STRUCTURE & FUNCTION: Correlate anatomical brain regions and neurotransmitter pathways.
+1. APPLIED PHARMACOKINETICS (ADME): Generate applied, scenario-based cards for Absorption, Distribution, Metabolism, and Elimination. Include the two distinct types of elimination (Zero-order vs First-order kinetics) and provide real-world drug examples for each phase.
+2. ADME INTERACTIONS: Generate scenarios testing drug-drug or drug-body interactions at specific stages of ADME (with concrete examples).
+3. TYPES OF TOLERANCE: Generate applied cards differentiating types of tolerance (Metabolic/Dispositional, Pharmacodynamic/Cellular, Behavioral/Conditioned, Cross-tolerance, Reverse-tolerance/Sensitization) with concrete examples.
+4. DRUG ACTION MECHANISMS: Differentiate at least 3 distinct mechanisms of drug action, explicitly forcing concrete examples for each.
+5. RECEPTOR MECHANISMS & AFFINITY: Test agonist, antagonist, and allosteric modulator kinetics, explicitly focusing on binding affinity and receptor interactions.
+6. PHARMACODYNAMICS: Focus on efficacy, half-life ($t_{1/2}$), $ED_{50}$, therapeutic index.
 """,
         "developmental_psychology": """
 DOMAIN INSTRUCTIONS — DEVELOPMENTAL PSYCHOLOGY (PSYC 2110):
@@ -406,6 +415,10 @@ CARD_DECOMPOSITION_JSON_SCHEMA = {
                         "type": "string",
                         "description": "Required if card_type is cloze: sentence with {{c1::target}}."
                     },
+                    "concrete_example": {
+                        "type": "string",
+                        "description": "A concrete real-world example, clinical application, or scenario illustrating the concept."
+                    },
                     "category_badge": {
                         "type": "string",
                         "enum": ["badge-definition", "badge-important"]
@@ -419,7 +432,7 @@ CARD_DECOMPOSITION_JSON_SCHEMA = {
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["card_type", "question", "answer", "category_badge", "context", "tags"]
+                "required": ["card_type", "question", "answer", "category_badge", "context", "tags", "concrete_example"]
             }
         }
     },
@@ -1087,6 +1100,10 @@ class SemanticCardParser:
             f"Preceding Context: {paragraph_prefix or 'None'}\n"
             f"Additional Context: {context or 'None'}\n"
             f"Highlighted Text:\n\"{text}\"\n\n"
+            f"CRITICAL CONSTRAINTS (ZERO-TAUTOLOGY):\n"
+            f"1. For Green highlights (Definitions): Use card_type 'bidirectional_definition' with 'keyword' (the term, 1-4 words) and 'descriptor' (the clean definition). Question and answer MUST NOT be identical.\n"
+            f"2. For Yellow highlights (Concepts): 'question' must be an active recall question testing the concept, and 'answer' must be the explanation. NEVER repeat the text as the question with a question mark.\n"
+            f"3. Any card where Question == Answer will be rejected immediately.\n\n"
             f"Output must strictly follow the JSON schema: {{\"cards\": [...]}}"
         )
 
@@ -1127,6 +1144,11 @@ class SemanticCardParser:
                 # Generate Forward Card (Recall)
                 fwd_q = item.get("question") or f"What is the definition of <b>{kw}</b>?"
                 fwd_a = item.get("answer") or desc
+                
+                if "concrete_example" in item and item["concrete_example"]:
+                    fwd_a += f"<br><br><b>Example/Application:</b> {item['concrete_example']}"
+                    if "example" not in fwd_q.lower() and "application" not in fwd_q.lower():
+                        fwd_q += " (Include a concrete example/application)"
                 fwd_card = {
                     "card_type": "bidirectional_definition",
                     "keyword": kw,
@@ -1135,10 +1157,10 @@ class SemanticCardParser:
                     "answer": fwd_a,
                     "category_badge": badge,
                     "context": ctx,
-                    "tags": list(set(merged_tags + ["definition", "forward"]))
+                    "tags": list(set(merged_tags + ["definition", "forward", "applied"]))
                 }
                 # Generate Reverse Card (Recognition)
-                rev_q = item.get("reverse_question") or f"What term is defined by:<br><i>{desc}</i>"
+                rev_q = item.get("reverse_question") or f"What term or concept is applied/defined by:<br><i>{desc}</i>"
                 rev_a = kw
                 rev_card = {
                     "card_type": "bidirectional_definition",
@@ -1148,7 +1170,7 @@ class SemanticCardParser:
                     "answer": rev_a,
                     "category_badge": badge,
                     "context": ctx,
-                    "tags": list(set(merged_tags + ["definition", "reverse"]))
+                    "tags": list(set(merged_tags + ["definition", "reverse", "applied"]))
                 }
                 expanded_cards.extend([fwd_card, rev_card])
 
@@ -1171,6 +1193,11 @@ class SemanticCardParser:
             else:  # active_recall_qa or specialized taxonomies
                 q = item.get("question", "")
                 a = item.get("answer", "")
+                
+                if "concrete_example" in item and item["concrete_example"]:
+                    a += f"<br><br><b>Example/Application:</b> {item['concrete_example']}"
+                    if "example" not in q.lower() and "application" not in q.lower():
+                        q += " (Include a concrete example/application)"
                 expanded_cards.append({
                     "card_type": "active_recall_qa",
                     "taxonomy": item.get("taxonomy", "active_recall_qa"),
@@ -1243,11 +1270,11 @@ class SemanticCardParser:
                 "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
-                "question": f"What is the definition of <b>{term}</b>?",
+                "question": f"What is the definition and a concrete example of <b>{term}</b>?" if re.search(r'\\b(e\\.g\\.|for example|such as|for instance|like)\\b', definition, re.IGNORECASE) else f"What is the applied definition of <b>{term}</b>?",
                 "answer": definition,
                 "category_badge": "badge-definition",
                 "context": ctx_field,
-                "tags": base_tags + ["definition", "forward"]
+                "tags": base_tags + ["definition", "forward", "applied"]
             })
 
             # Card 2: Reverse (Active Recognition: Definition -> Term)
@@ -1256,11 +1283,11 @@ class SemanticCardParser:
                 "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
-                "question": f"What term is defined by:<br><i>{definition}</i>",
+                "question": f"What term or concept is applied/defined by:<br><i>{definition}</i>",
                 "answer": term,
                 "category_badge": "badge-definition",
                 "context": ctx_field,
-                "tags": base_tags + ["definition", "reverse"]
+                "tags": base_tags + ["definition", "reverse", "applied"]
             })
             return cards
 
@@ -1317,17 +1344,20 @@ class SemanticCardParser:
                 term, descriptor, tier = split_highlight_fallback(clause, paragraph_prefix, heading)
                 
                 if domain == "statistics":
-                    sig_label = "statistical role or rule"
-                    mech_label = "key statistical principle"
+                    sig_label = "applied statistical role"
+                    mech_label = "applied statistical principle"
                 elif domain == "developmental_psychology":
-                    sig_label = "developmental significance"
-                    mech_label = "key developmental process"
+                    sig_label = "applied developmental significance"
+                    mech_label = "applied developmental process"
                 elif domain == "professionalism":
-                    sig_label = "ethical significance"
-                    mech_label = "key ethical rule or principle"
+                    sig_label = "applied ethical significance"
+                    mech_label = "applied ethical rule or principle"
+                elif domain == "pharmacology":
+                    sig_label = "pharmacokinetic/pharmacodynamic application"
+                    mech_label = "applied physiological mechanism"
                 else:
-                    sig_label = "clinical significance"
-                    mech_label = "key mechanism"
+                    sig_label = "concrete clinical application or significance"
+                    mech_label = "applied mechanism or real-world example"
 
                 # If term is short and clean, create active recall question
                 if term and term != heading and term != "Key Principle" and is_valid_concept_keyword(term):
@@ -1335,11 +1365,11 @@ class SemanticCardParser:
                         "card_type": "active_recall_qa",
                         "keyword": term,
                         "descriptor": descriptor,
-                        "question": f"What is the {sig_label} of <b>{term}</b>?",
+                        "question": f"What is the {sig_label} and a concrete example of <b>{term}</b>?" if re.search(r'\\b(e\\.g\\.|for example|such as|for instance|like)\\b', descriptor, re.IGNORECASE) else f"What is the {sig_label} of <b>{term}</b>?",
                         "answer": descriptor,
                         "category_badge": "badge-important",
                         "context": ctx_field,
-                        "tags": base_tags + ["high_yield"]
+                        "tags": base_tags + ["high_yield", "applied"]
                     })
                 else:
                     # Heading-anchored active recall question (never raw heading dump)
@@ -1347,11 +1377,11 @@ class SemanticCardParser:
                         "card_type": "active_recall_qa",
                         "keyword": term,
                         "descriptor": descriptor,
-                        "question": f"What is the {mech_label} regarding <b>{term}</b>?",
+                        "question": f"What is the {mech_label} and a concrete example regarding <b>{term}</b>?" if re.search(r'\\b(e\\.g\\.|for example|such as|for instance|like)\\b', descriptor, re.IGNORECASE) else f"What is the {mech_label} regarding <b>{term}</b>?",
                         "answer": descriptor,
                         "category_badge": "badge-important",
                         "context": ctx_field,
-                        "tags": base_tags + ["high_yield"]
+                        "tags": base_tags + ["high_yield", "applied"]
                     })
 
             if cards:
@@ -1365,10 +1395,10 @@ class SemanticCardParser:
             "card_type": "active_recall_qa",
             "keyword": term,
             "descriptor": descriptor,
-            "question": f"What is the primary role of <b>{term}</b>?",
+            "question": f"What is the applied role and a concrete example of <b>{term}</b>?" if re.search(r'\\b(e\\.g\\.|for example|such as|for instance|like)\\b', descriptor, re.IGNORECASE) else f"What is the applied role of <b>{term}</b>?",
             "answer": descriptor,
             "category_badge": "badge-important",
             "context": ctx_field,
-            "tags": base_tags + ["secondary"]
+            "tags": base_tags + ["secondary", "applied"]
         })
         return cards
