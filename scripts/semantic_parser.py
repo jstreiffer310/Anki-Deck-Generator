@@ -1047,6 +1047,20 @@ class SemanticCardParser:
         if not clean_input:
             return []
 
+        # Auto-infer domain from heading when no explicit domain is provided.
+        # Ensures callers/tests passing heading= without domain= get correct
+        # domain-aware phrasing (e.g. "applied definition" for pharmacology).
+        if domain == "general" and heading:
+            heading_lower = heading.lower()
+            if any(k in heading_lower for k in ("pharmacology", "pharmacokinetic", "pharmacodynamic", "drugs", "drug")):
+                domain = "pharmacology"
+            elif any(k in heading_lower for k in ("developmental", "development", "lifespan", "piaget", "erikson")):
+                domain = "developmental_psychology"
+            elif any(k in heading_lower for k in ("statistic", "quantitative", "psyc 3031", "r syntax")):
+                domain = "statistics"
+            elif any(k in heading_lower for k in ("professionalism", "ethics", "professional", "psyc 3000")):
+                domain = "professionalism"
+
         # 1. Attempt LLM Parsing via Ollama
         cards = self.parse_with_ollama(clean_input, highlight_color, heading, context, paragraph_prefix, domain=domain)
         if cards:

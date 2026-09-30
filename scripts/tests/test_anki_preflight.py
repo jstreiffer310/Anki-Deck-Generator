@@ -35,6 +35,16 @@ class TestAnkiPreflight:
         assert any("collection.anki2" in str(p).lower() for p in paths)
 
     def test_get_existing_deck_concepts_via_sqlite(self):
+        import sqlite3
+        # Skip gracefully when Anki is open and holds an exclusive lock.
+        anki_paths = find_anki_collection_paths()
+        if anki_paths:
+            try:
+                _test_conn = sqlite3.connect(str(anki_paths[0]), timeout=1)
+                _test_conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+                _test_conn.close()
+            except sqlite3.OperationalError:
+                pytest.skip("Anki is running and collection.anki2 is locked — skipping live SQLite test")
         data = get_existing_deck_concepts_via_sqlite("3590")
         assert data["source"] == "local_sqlite"
         assert data["count"] > 0
