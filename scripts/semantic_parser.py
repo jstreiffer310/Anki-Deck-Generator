@@ -1265,25 +1265,32 @@ class SemanticCardParser:
                         return cog_cards
 
             # Card 1: Forward (Active Recall: Term -> Definition)
+            if re.search(r'\b(e\.g\.|for example|such as|for instance|like)\b', definition, re.IGNORECASE):
+                fwd_q = f"What is the definition and a concrete example of <b>{term}</b>?"
+            elif domain in ("pharmacology", "developmental_psychology"):
+                fwd_q = f"What is the applied definition of <b>{term}</b>?"
+            else:
+                fwd_q = f"What is the definition of <b>{term}</b>?"
+
             cards.append({
                 "card_type": "bidirectional_definition",
                 "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
-                "question": f"What is the definition and a concrete example of <b>{term}</b>?" if re.search(r'\\b(e\\.g\\.|for example|such as|for instance|like)\\b', definition, re.IGNORECASE) else f"What is the applied definition of <b>{term}</b>?",
+                "question": fwd_q,
                 "answer": definition,
                 "category_badge": "badge-definition",
                 "context": ctx_field,
                 "tags": base_tags + ["definition", "forward", "applied"]
             })
 
-            # Card 2: Reverse (Active Recognition: Definition -> Term)
+            rev_q = f"What term or concept is applied/defined by:<br><i>{definition}</i>" if domain in ("pharmacology", "developmental_psychology") else f"What term is defined by:<br><i>{definition}</i>"
             cards.append({
                 "card_type": "bidirectional_definition",
                 "taxonomy": "term_definition",
                 "keyword": term,
                 "descriptor": definition,
-                "question": f"What term or concept is applied/defined by:<br><i>{definition}</i>",
+                "question": rev_q,
                 "answer": term,
                 "category_badge": "badge-definition",
                 "context": ctx_field,
