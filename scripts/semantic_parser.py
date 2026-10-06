@@ -4,6 +4,7 @@ Implements LLM-assisted parsing via Ollama and a deterministic 64+ pattern
 rule-based fallback parser with multi-tier subject resolution and zero "this concept" emissions.
 """
 
+import os
 import re
 import json
 import logging

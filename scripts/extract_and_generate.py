@@ -1372,7 +1372,10 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         deck_tags = []
 
     if parser is None and SemanticCardParser is not None:
-        runtime_mgr = OllamaRuntimeManager() if OllamaRuntimeManager is not None else None
+        if os.environ.get("ANKI_NO_OLLAMA") or os.environ.get("NO_OLLAMA"):
+            runtime_mgr = None
+        else:
+            runtime_mgr = OllamaRuntimeManager() if OllamaRuntimeManager is not None else None
         parser = SemanticCardParser(runtime_manager=runtime_mgr)
 
     for item in structured_data:
@@ -2175,7 +2178,8 @@ def process_source_and_generate(
     simple_mode: bool = False,
     preserve_existing: Optional[bool] = None,
     auto_extract: bool = False,
-    syllabus: Optional[str] = None
+    syllabus: Optional[str] = None,
+    no_ollama: bool = False
 ) -> Tuple[Path, str, List[Dict[str, Any]]]:
     """
     Unified ingestion and generation pipeline for Google Docs (URL or ID) or local .docx.
@@ -2193,6 +2197,8 @@ def process_source_and_generate(
     Returns:
         (out_apkg_path, deck_title, cards)
     """
+    if no_ollama:
+        os.environ["ANKI_NO_OLLAMA"] = "1"
     # Auto-resolve course codes, .gdoc files, or empty source inputs
     if resolve_source_document is not None:
         try:
@@ -2407,6 +2413,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-inject", action="store_true", help="Skip auto-injection into Anki via AnkiConnect")
     parser.add_argument("--auto-extract", action="store_true", help="Enable LLM-driven auto-extraction of concepts (ignores physical highlights)")
     parser.add_argument("--syllabus", help="Path to syllabus file (.txt or .docx) for guided auto-extraction")
+    parser.add_argument("--no-ollama", action="store_true", help="Bypass Ollama and use high-speed deterministic parser")
     args = parser.parse_args()
 
     if getattr(args, "init_ollama", False) and OllamaRuntimeManager is not None:
@@ -2430,7 +2437,8 @@ if __name__ == "__main__":
         simple_mode=getattr(args, "simple", False),
         preserve_existing=not getattr(args, "no_preserve", False),
         auto_extract=getattr(args, "auto_extract", False),
-        syllabus=getattr(args, "syllabus", None)
+        syllabus=getattr(args, "syllabus", None),
+        no_ollama=getattr(args, "no_ollama", False)
     )
 
 
