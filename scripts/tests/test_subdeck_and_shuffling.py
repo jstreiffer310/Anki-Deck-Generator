@@ -186,22 +186,23 @@ class TestSubdeckHierarchy:
                 zf.extract("collection.anki2", extract_dir)
                 db_path = Path(extract_dir) / "collection.anki2"
                 conn = sqlite3.connect(str(db_path))
-                cursor = conn.cursor()
+                try:
+                    cursor = conn.cursor()
 
-                # Inspect 'col' table: decks JSON
-                cursor.execute("SELECT decks FROM col")
-                decks_json_str = cursor.fetchone()[0]
-                decks = json.loads(decks_json_str)
+                    # Inspect 'col' table: decks JSON
+                    cursor.execute("SELECT decks FROM col")
+                    decks_json_str = cursor.fetchone()[0]
+                    decks = json.loads(decks_json_str)
 
-                # Verify root deck and nested subdecks are present
-                deck_names = {d["name"] for d in decks.values()}
-                assert root_title in deck_names
-                assert f"{root_title}::Chapter 1: Foundations::Section 1.1: Scope" in deck_names
-                assert f"{root_title}::Chapter 2: Methods::Section 2.1: Designs" in deck_names
+                    # Verify root deck and nested subdecks are present
+                    deck_names = {d["name"] for d in decks.values()}
+                    assert root_title in deck_names
+                    assert f"{root_title}::Chapter 1: Foundations::Section 1.1: Scope" in deck_names
+                    assert f"{root_title}::Chapter 2: Methods::Section 2.1: Designs" in deck_names
 
-                # Inspect 'cards' table: verify cards have distinct did values matching subdecks
-                cursor.execute("SELECT did FROM cards")
-                card_dids = [row[0] for row in cursor.fetchall()]
-                assert len(card_dids) == 3
-
-                conn.close()
+                    # Inspect 'cards' table: verify cards have distinct did values matching subdecks
+                    cursor.execute("SELECT did FROM cards")
+                    card_dids = [row[0] for row in cursor.fetchall()]
+                    assert len(card_dids) == 3
+                finally:
+                    conn.close()

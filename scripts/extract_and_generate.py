@@ -298,6 +298,8 @@ def extract_chapter_tags(hier=None, heading=None, doc_title=None, explicit_chapt
     Extracts standardized, normalized chapter tags (e.g., 'Chapter_1', 'Chapter_4')
     and structural unit tags (e.g., 'Lecture_1', 'Week_2', 'Topic_3') from heading
     lineage, headings, document titles, or explicit arguments.
+    Cross-synchronizes Lecture_X, Week_X, and Chapter_X so every card has matching
+    structural filters.
     """
     candidates = []
     if hier:
@@ -325,30 +327,55 @@ def extract_chapter_tags(hier=None, heading=None, doc_title=None, explicit_chapt
             continue
         text_str = str(text).strip()
 
-        # 1. Explicit Chapter / Ch / Chap (e.g., 'Chapter 1', 'Ch4: The Nervous System', 'Ch. 5', 'PSYC 2110_Ch1_...')
-        m_ch = re.search(r'(?:^|[\b\s_/\-–—:])(?:chapter|chap\.?|ch\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
-        if m_ch:
+        # Multi-chapter ranges (e.g. 'Ch4-5/Lec 3', 'Chapters 4-5')
+        m_ch_range = re.search(r'(?:^|[\b\s_/\-–—:])(?:chapters?|chaps?\.?|ch\.?)\s*(\d+)\s*(?:[-–—/&]|and)\s*(\d+)', text_str, re.IGNORECASE)
+        if m_ch_range:
+            start_ch = int(m_ch_range.group(1))
+            end_ch = int(m_ch_range.group(2))
+            if start_ch <= end_ch and end_ch - start_ch <= 10:
+                for c_num in range(start_ch, end_ch + 1):
+                    add_tag(f"Chapter_{c_num}")
+
+        # Explicit Chapter / Ch / Chap single (e.g., 'Chapter 1', 'Ch4: The Nervous System', 'Ch. 5', 'PSYC 2110_Ch1_...')
+        for m_ch in re.finditer(r'(?:^|[\b\s_/\-–—:])(?:chapter|chap\.?|ch\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE):
             add_tag(f"Chapter_{int(m_ch.group(1))}")
 
-        # 2. Leading numbered heading (e.g., '1: Goals, Theories, and Methods', '2. Heredity...', '3 - Prenatal...')
-        m_lead = re.match(r'^\s*(\d{1,2})\s*[:.\-–—]\s+[A-Za-z]', text_str)
+        # Leading numbered heading (e.g., '1: Goals, Theories, and Methods', '4 Perceptual and Motor...')
+        m_lead = re.match(r'^\s*(\d{1,2})\s*(?:[:.\-–—]\s*|\s+)[A-Za-z]', text_str)
         if m_lead:
             add_tag(f"Chapter_{int(m_lead.group(1))}")
 
-        # 3. Lecture / Lec (e.g., 'Lecture 1', 'LEC 1 (9/11): Intro', 'Lec. 3')
-        m_lec = re.search(r'(?:^|[\b\s_/\-–—:])(?:lecture|lec\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
-        if m_lec:
+        # Lecture / Lec (e.g., 'Lecture 1', 'LEC 1 (9/11): Intro', 'Lec. 3', 'Lec 1')
+        for m_lec in re.finditer(r'(?:^|[\b\s_/\-–—:])(?:lecture|lec\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE):
             add_tag(f"Lecture_{int(m_lec.group(1))}")
 
-        # 4. Week / Wk (e.g., 'Week 1', 'Wk 2', 'Week 4-Week 5')
-        m_wk = re.search(r'(?:^|[\b\s_/\-–—:])(?:week|wk\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
-        if m_wk:
+        # Week / Wk (e.g., 'Week 1', 'Wk 2', 'Week 4')
+        for m_wk in re.finditer(r'(?:^|[\b\s_/\-–—:])(?:week|wk\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE):
             add_tag(f"Week_{int(m_wk.group(1))}")
 
-        # 5. Topic (e.g., 'TOPIC 3 - Sampling Distributions', 'Topic 1')
-        m_top = re.search(r'(?:^|[\b\s_/\-–—:])(?:topic|top\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
-        if m_top:
+        # Topic (e.g., 'TOPIC 3 - Sampling Distributions', 'Topic 1')
+        for m_top in re.finditer(r'(?:^|[\b\s_/\-–—:])(?:topic|top\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE):
             add_tag(f"Topic_{int(m_top.group(1))}")
+
+    # Cross-synchronize Lecture_X, Week_X, and Chapter_X
+    current_lectures = [int(re.search(r'\d+', t).group()) for t in tags if t.startswith("Lecture_")]
+    current_weeks = [int(re.search(r'\d+', t).group()) for t in tags if t.startswith("Week_")]
+    current_chapters = [int(re.search(r'\d+', t).group()) for t in tags if t.startswith("Chapter_")]
+
+    # Sync Lecture <-> Week
+    for lec in current_lectures:
+        add_tag(f"Week_{lec}")
+    for wk in current_weeks:
+        add_tag(f"Lecture_{wk}")
+
+    # If no explicit lecture tag, infer Lecture and Week from Chapter
+    if not current_lectures and not current_weeks:
+        for ch in current_chapters:
+            add_tag(f"Lecture_{ch}")
+            add_tag(f"Week_{ch}")
+    elif not current_chapters:
+        for lec in current_lectures:
+            add_tag(f"Chapter_{lec}")
 
     return tags
 
@@ -1348,13 +1375,70 @@ def stable_deck_id(deck_name: str) -> int:
     return 1000000000 + (h % 1147483647)
 
 
+def normalize_lecture_heading(h: str) -> str:
+    """
+    Normalizes chapter/lecture heading strings into standard Lecture/Week names.
+    Maps course shorthands (e.g., 'Ch1/Lec 1', 'Ch4-5/Lec 3') and bare numbered
+    headings (e.g., '1: Goals...', '4 Perceptual...') to standardized subdeck names.
+    Preserves existing 'Chapter X: ...', 'Lecture X: ...', 'Week X: ...' styles.
+    """
+    if not h:
+        return ""
+    s = str(h).strip().rstrip(':-–— \t')
+
+    # Specific known course shorthands
+    if re.search(r'ch1/lec\s*1', s, re.IGNORECASE):
+        return "Lecture 1 - Foundational Concepts (Chapter 1)"
+    if re.search(r'ch2/lec\s*2', s, re.IGNORECASE):
+        return "Lecture 2 - Drug Use as Social Problem & Addiction (Chapter 2)"
+    if re.search(r'ch4-?5/lec\s*3', s, re.IGNORECASE):
+        return "Lecture 3 - Nervous System & Actions of Drugs (Chapters 4-5)"
+    if re.search(r'ch9.*?/lec\s*4', s, re.IGNORECASE):
+        return "Lecture 4 - Alcohol (Chapter 9)"
+
+    # If already starts with Chapter X:, Lecture X:, Week X:, preserve it
+    if re.match(r'^(?:chapter|lecture|week)\s*\d+\s*[:.\-–—]', s, re.IGNORECASE):
+        return s
+
+    # Leading numbered heading (e.g., '1: Goals, Theories, and Methods' or '4 Perceptual and Motor...')
+    m_num = re.match(r'^\s*(\d{1,2})\s*(?:[:.\-–—]\s*|\s+)(.+)', s)
+    if m_num:
+        num = int(m_num.group(1))
+        title = m_num.group(2).strip().rstrip(':-–— \t')
+        return f"Lecture {num} - {title}"
+
+    # Shorthand 'Lec X - Title' or 'Lec X: Title'
+    m_lec = re.match(r'^\s*(?:lecture|lec\.?)\s*(\d{1,2})\s*[:.\-–—\s]*(.*)', s, re.IGNORECASE)
+    if m_lec:
+        num = int(m_lec.group(1))
+        title = m_lec.group(2).strip().rstrip(':-–— \t')
+        return f"Lecture {num} - {title}" if title else f"Lecture {num}"
+
+    # Shorthand 'Wk X - Title'
+    m_wk = re.match(r'^\s*(?:week|wk\.?)\s*(\d{1,2})\s*[:.\-–—\s]*(.*)', s, re.IGNORECASE)
+    if m_wk:
+        num = int(m_wk.group(1))
+        title = m_wk.group(2).strip().rstrip(':-–— \t')
+        return f"Week {num} - {title}" if title else f"Week {num}"
+
+    # Shorthand 'Ch X - Title'
+    m_ch = re.match(r'^\s*(?:chapter|chap\.?|ch\.?)\s*(\d{1,2})\s*[:.\-–—\s]*(.*)', s, re.IGNORECASE)
+    if m_ch:
+        num = int(m_ch.group(1))
+        title = m_ch.group(2).strip().rstrip(':-–— \t')
+        return f"Chapter {num} - {title}" if title else f"Chapter {num}"
+
+    return s
+
+
 def resolve_card_subdeck(card: Dict[str, Any], root_deck_title: str) -> str:
     """
-    Resolves the hierarchical subdeck path (Course::Chapter::Section) for a card.
-    Uses card['subdeck'] if explicitly set, else builds from heading_hierarchy.
+    Resolves the hierarchical subdeck path (Course::Chapter/Lecture::Section) for a card.
+    Uses card['subdeck_override'] or card['subdeck'] if explicitly set, else builds from heading_hierarchy.
     """
-    if card.get("subdeck"):
-        sub = str(card["subdeck"]).strip()
+    sub = card.get("subdeck_override") or card.get("subdeck")
+    if sub:
+        sub = str(sub).strip()
         if sub.startswith(root_deck_title):
             return sub
         return f"{root_deck_title}::{sub.lstrip(':')}"
@@ -1366,21 +1450,41 @@ def resolve_card_subdeck(card: Dict[str, Any], root_deck_title: str) -> str:
     if isinstance(hier, str):
         hier = [hier]
 
+    # Preserve (Simple) in base_course if root_deck_title is a Simple deck
+    is_simple = "(Simple)" in root_deck_title
     base_course = root_deck_title.split("::")[0].strip()
-    levels = []
+    if is_simple and "(Simple)" not in base_course:
+        base_course = f"{base_course} (Simple)"
+
+    # Filter out empty or root labels
+    raw_levels = []
     for h in hier:
         if not h or not str(h).strip():
             continue
         clean_h = str(h).strip()
-        if clean_h.lower() in ("general", "root", base_course.lower()):
+        if clean_h.lower() in ("general", "root", base_course.lower(), "deck"):
             continue
-        clean_h = re.sub(r'::+', ':', clean_h).strip()
-        levels.append(clean_h)
+        raw_levels.append(clean_h)
 
-    if not levels:
+    # Strip part/tab groupings (e.g. 'Part 1: Foundations', 'Part 2: Infancy & Childhood')
+    # when followed by specific lecture/chapter headings
+    if len(raw_levels) >= 2 and re.match(r'^\s*(?:part|tab|unit|section)\s*\d+[:.\-–—\s]', raw_levels[0], re.IGNORECASE):
+        raw_levels = raw_levels[1:]
+
+    if not raw_levels:
         return root_deck_title
 
-    subdeck_path = "::".join(levels[:2])
+    # Level 1: Normalized Lecture / Week heading
+    lvl0 = normalize_lecture_heading(raw_levels[0])
+
+    # Level 2 (optional): Section / topic name
+    if len(raw_levels) > 1:
+        lvl1 = raw_levels[1].strip()
+        lvl1 = re.sub(r'::+', ':', lvl1).strip().rstrip(':-–— \t')
+        subdeck_path = f"{lvl0}::{lvl1}"
+    else:
+        subdeck_path = lvl0
+
     return f"{base_course}::{subdeck_path}"
 
 
@@ -1624,9 +1728,11 @@ def create_deck_package(deck_title, cards, output_filename=None):
             output_filename = f"{safe_title}.apkg"
         out_path = out_dir / output_filename
 
-    package = genanki.Package(list(decks.values()))
+    # Include the root deck and only non-empty subdecks
+    decks_to_include = [d for d in decks.values() if d.name == base_title or len(d.notes) > 0]
+    package = genanki.Package(decks_to_include)
     package.write_to_file(str(out_path))
-    print(f"Successfully generated Anki deck: {out_path} ({len(cards)} cards across {len(decks)} subdecks)")
+    print(f"Successfully generated Anki deck: {out_path} ({len(cards)} cards across {len(decks_to_include)} subdecks)")
 
     # Auto-mirror to Google Drive Anki Decks folder if configured and available
     gdrive_dir = CONFIG.get("google_drive_decks_directory")
@@ -2554,12 +2660,23 @@ def resolve_deck_naming(
                 chapter_name = str(source_path_or_id)
 
     # Format: CLASS(with course name)::CHAPTER
-    deck_title = f"{class_str}::{chapter_name}"
+    # If chapter_name is just the course itself or the whole source document notes title, use class_str as root deck title
+    is_course_level = (
+        not chapter_name
+        or chapter_name.strip().upper() in (course_code.strip().upper(), (explicit_class or "").strip().upper())
+        or chapter_name == str(source_path_or_id)
+        or bool(re.search(r'lecture\s*&\s*textbook\s*notes', str(chapter_name), re.IGNORECASE))
+    )
 
-    # Clean filename for Windows (Windows forbids ':' in file paths)
     safe_clean_class = re.sub(r'[^a-zA-Z0-9_\-]', '_', class_str)
-    safe_clean_chapter = re.sub(r'[^a-zA-Z0-9_\-]', '_', chapter_name)
-    safe_basename = f"{safe_clean_class}_{safe_clean_chapter}"
+    if not is_course_level:
+        deck_title = f"{class_str}::{chapter_name}"
+        safe_clean_chapter = re.sub(r'[^a-zA-Z0-9_\-]', '_', chapter_name)
+        safe_basename = f"{safe_clean_class}_{safe_clean_chapter}"
+    else:
+        deck_title = class_str
+        safe_basename = safe_clean_class
+
     safe_basename = re.sub(r'_+', '_', safe_basename).strip('_')
     if simple_mode:
         if not deck_title.endswith("(Simple)"):
