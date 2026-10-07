@@ -118,13 +118,14 @@ except ImportError:
 
 # Source auto-resolution engine
 try:
-    from scripts.source_resolver import resolve_source_document, get_course_registry
+    from scripts.source_resolver import resolve_source_document, get_course_registry, normalize_course_code
 except ImportError:
     try:
-        from source_resolver import resolve_source_document, get_course_registry
+        from source_resolver import resolve_source_document, get_course_registry, normalize_course_code
     except ImportError:
         resolve_source_document = None
         get_course_registry = None
+        normalize_course_code = None
 
 # Anki collection pre-flight protection engine
 try:
@@ -2029,6 +2030,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                     "answer": desc,
                     "category_badge": "badge-definition",
                     "context": heading,
+                    "heading_hierarchy": hier,
                     "tags": list(dict.fromkeys(tags + ["simple_mode", "definition"]))
                 })
             continue  # done with this item in simple mode
@@ -2753,7 +2755,14 @@ def process_source_and_generate(
     if no_ollama:
         os.environ["ANKI_NO_OLLAMA"] = "1"
     # Auto-resolve course codes, .gdoc files, or empty source inputs
-    if resolve_source_document is not None:
+    recent_links = CONFIG.get("recent_doc_links", {})
+    clean_code = normalize_course_code(source) if normalize_course_code is not None else str(source).strip().upper()
+    if clean_code and clean_code in recent_links:
+        source = recent_links[clean_code]
+        if not explicit_class:
+            explicit_class = clean_code
+        print(f"[Auto-Fill] Resolved {clean_code} to live Google Doc: {source}")
+    elif resolve_source_document is not None:
         try:
             resolved_meta = resolve_source_document(source, course_hint=explicit_class)
             if resolved_meta and resolved_meta.get("auto_filled"):
