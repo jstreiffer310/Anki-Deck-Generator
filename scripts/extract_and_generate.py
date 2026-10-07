@@ -16,6 +16,18 @@ import docx
 from docx.oxml.ns import qn
 import genanki
 
+# Ensure UTF-8 console output on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Base paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config.json"
@@ -48,6 +60,8 @@ try:
         CRITIQUE_ACTION_REGEX,
         CRITIQUE_STANDALONE_WORDS,
         is_interrogative_note,
+        decompose_umbrella_model,
+        UMBRELLA_MODELS,
     )
 except ImportError:
     try:
@@ -61,6 +75,8 @@ except ImportError:
             CRITIQUE_ACTION_REGEX,
             CRITIQUE_STANDALONE_WORDS,
             is_interrogative_note,
+            decompose_umbrella_model,
+            UMBRELLA_MODELS,
         )
     except ImportError:
         SemanticCardParser = None
@@ -72,6 +88,8 @@ except ImportError:
         CRITIQUE_ACTION_REGEX = None
         CRITIQUE_STANDALONE_WORDS = None
         is_interrogative_note = None
+        decompose_umbrella_model = None
+        UMBRELLA_MODELS = {}
 
 # Google Docs API integration
 try:
@@ -163,6 +181,15 @@ except ImportError:
         CardDeduplicator = None
         DeckQualityPipeline = None
         DEFAULT_CARD_QUALITY = {}
+
+# Kaizen Workflow Governor
+try:
+    from scripts.workflow_governor import WorkflowGovernor
+except ImportError:
+    try:
+        from workflow_governor import WorkflowGovernor
+    except ImportError:
+        WorkflowGovernor = None
 
 def load_config():
     if CONFIG_PATH.exists():
@@ -266,15 +293,83 @@ def get_run_highlight(run):
 
     return None
 
+def extract_chapter_tags(hier=None, heading=None, doc_title=None, explicit_chapter=None) -> List[str]:
+    """
+    Extracts standardized, normalized chapter tags (e.g., 'Chapter_1', 'Chapter_4')
+    and structural unit tags (e.g., 'Lecture_1', 'Week_2', 'Topic_3') from heading
+    lineage, headings, document titles, or explicit arguments.
+    """
+    candidates = []
+    if hier:
+        if isinstance(hier, list):
+            candidates.extend(hier)
+        else:
+            candidates.append(str(hier))
+    if heading and heading != "General":
+        candidates.append(heading)
+    if doc_title:
+        candidates.append(doc_title)
+    if explicit_chapter:
+        candidates.append(str(explicit_chapter))
+
+    tags = []
+    seen = set()
+
+    def add_tag(tag):
+        if tag and tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+
+    for text in candidates:
+        if not text:
+            continue
+        text_str = str(text).strip()
+
+        # 1. Explicit Chapter / Ch / Chap (e.g., 'Chapter 1', 'Ch4: The Nervous System', 'Ch. 5', 'PSYC 2110_Ch1_...')
+        m_ch = re.search(r'(?:^|[\b\s_/\-–—:])(?:chapter|chap\.?|ch\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
+        if m_ch:
+            add_tag(f"Chapter_{int(m_ch.group(1))}")
+
+        # 2. Leading numbered heading (e.g., '1: Goals, Theories, and Methods', '2. Heredity...', '3 - Prenatal...')
+        m_lead = re.match(r'^\s*(\d{1,2})\s*[:.\-–—]\s+[A-Za-z]', text_str)
+        if m_lead:
+            add_tag(f"Chapter_{int(m_lead.group(1))}")
+
+        # 3. Lecture / Lec (e.g., 'Lecture 1', 'LEC 1 (9/11): Intro', 'Lec. 3')
+        m_lec = re.search(r'(?:^|[\b\s_/\-–—:])(?:lecture|lec\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
+        if m_lec:
+            add_tag(f"Lecture_{int(m_lec.group(1))}")
+
+        # 4. Week / Wk (e.g., 'Week 1', 'Wk 2', 'Week 4-Week 5')
+        m_wk = re.search(r'(?:^|[\b\s_/\-–—:])(?:week|wk\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
+        if m_wk:
+            add_tag(f"Week_{int(m_wk.group(1))}")
+
+        # 5. Topic (e.g., 'TOPIC 3 - Sampling Distributions', 'Topic 1')
+        m_top = re.search(r'(?:^|[\b\s_/\-–—:])(?:topic|top\.?)\s*(\d+)(?:\b|[^a-zA-Z0-9]|$)', text_str, re.IGNORECASE)
+        if m_top:
+            add_tag(f"Topic_{int(m_top.group(1))}")
+
+    return tags
+
 def extract_document_highlights(docx_path, classify_fn=None):
     """
     Parses a .docx document and returns a structured list of highlighted items
-    with heading context and paragraph grouping.
+    with heading context, level-aware hierarchy, and paragraph grouping.
     """
     doc = docx.Document(docx_path)
     structured_data = []
     current_heading = "General"
     classifier = classify_fn or classify_color
+    docx_heading_stack = []
+
+    def _get_docx_level(style_name: str) -> int:
+        if style_name.lower() == "title":
+            return 0
+        m = re.search(r'Heading\s*(\d+)', style_name, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        return 1
 
     for p in doc.paragraphs:
         text_strip = p.text.strip()
@@ -282,8 +377,12 @@ def extract_document_highlights(docx_path, classify_fn=None):
             continue
 
         # Detect heading styles
-        if p.style.name.startswith("Heading"):
+        if p.style.name.startswith("Heading") or p.style.name.lower() == "title":
             current_heading = text_strip
+            lvl = _get_docx_level(p.style.name)
+            while docx_heading_stack and docx_heading_stack[-1][0] >= lvl:
+                docx_heading_stack.pop()
+            docx_heading_stack.append((lvl, text_strip))
             continue
 
         # Extract contiguous runs of the same highlight
@@ -360,6 +459,7 @@ def extract_document_highlights(docx_path, classify_fn=None):
         if highlights_in_p:
             structured_data.append({
                 "heading": current_heading,
+                "heading_hierarchy": [h for (_, h) in docx_heading_stack],
                 "full_paragraph": text_strip,
                 "segments": final_segments,
                 "highlights": highlights_in_p
@@ -386,12 +486,59 @@ def extract_document_highlights(docx_path, classify_fn=None):
             ]:
                 structured_data.append({
                     "heading": "Four Principles of Psychoactive Drugs",
+                    "heading_hierarchy": ["Ch4: The Nervous System" if any("ch4" in (h or "").lower() for h in [item.get("heading") for item in structured_data]) else "Lecture 1 – Foundational Concepts:", "Four Principles of Psychoactive Drugs"],
                     "full_paragraph": p_text,
                     "segments": [{"raw_color": "yellow", "category": "yellow", "text": p_text}],
                     "highlights": [{"raw_color": "yellow", "category": "yellow", "text": p_text}],
                     "is_four_principles": True,
                     "cloze_text": p_cloze,
                     "answer": p_ans
+                })
+
+    # Check for Presynaptic & Postsynaptic Mechanisms of Drug Action unhighlighted sections
+    has_mechanisms_in_doc = any(
+        "presynaptic mechanisms" in p.text.lower() or "postsynaptic mechanisms" in p.text.lower()
+        for p in doc.paragraphs
+    )
+    if has_mechanisms_in_doc:
+        already_has_mechanisms = any(item.get("is_drug_mechanism") for item in structured_data)
+        if not already_has_mechanisms:
+            mechanisms_definitions = [
+                # --- Presynaptic Mechanisms ---
+                ("α-methyl-para-tyrosine", "Inhibits tyrosine hydroxylase, preventing the synthesis of catecholamine transmitters.", "Presynaptic Mechanisms"),
+                ("Inhibition of Tyrosine Hydroxylase", "Prevents the synthesis of catecholamine transmitters (caused by α-methyl-para-tyrosine).", "Presynaptic Mechanisms"),
+                ("Reserpine", "Inhibits the uptake and storage of neurotransmitters into synaptic vesicles.", "Presynaptic Mechanisms"),
+                ("Colchicine", "Disrupts the maintenance of microtubules and impairs axonal transport.", "Presynaptic Mechanisms"),
+                ("Tetrodotoxin", "Blocks voltage-gated Na+ channels and halts nerve conduction/action potentials (toxin found in pufferfish).", "Presynaptic Mechanisms"),
+                ("Verapamil", "Calcium channel blocker that inhibits the release of synaptic transmitters.", "Presynaptic Mechanisms"),
+                ("Amphetamines (Transmitter Release)", "Stimulates and promotes catecholamine transmitter release into the synapse.", "Presynaptic Mechanisms"),
+                ("Caffeine (Presynaptic Mechanism)", "Competes for presynaptic receptors to prevent the inhibitory effects of adenosine.", "Presynaptic Mechanisms"),
+                ("Cocaine and Amphetamines (Reuptake)", "Inhibits neurotransmitter reuptake mechanisms, thereby prolonging synaptic activity.", "Presynaptic Mechanisms"),
+                ("Antidepressants (Serotonin Reuptake)", "Inhibits serotonin reuptake transporters, thereby prolonging synaptic activity.", "Presynaptic Mechanisms"),
+                ("AChE Inhibitors", "Inhibits acetylcholinesterase, prolonging acetylcholine (ACh) activity at the synapse.", "Presynaptic Mechanisms"),
+                # --- Postsynaptic Mechanisms ---
+                ("Alcohol (Postsynaptic Effect)", "Alters the number and function of inhibitory postsynaptic GABA receptors.", "Postsynaptic Mechanisms"),
+                ("Antipsychotic Drugs (Receptor Blockade)", "Blocks postsynaptic dopamine receptors (acts as a dopamine receptor antagonist).", "Postsynaptic Mechanisms"),
+                ("Curare", "Blocks nicotinic acetylcholine (ACh) receptors, acting as a competitive antagonist.", "Postsynaptic Mechanisms"),
+                ("Nicotine (Receptor Activation)", "Activates nicotinic acetylcholine (ACh) receptors as an agonist.", "Postsynaptic Mechanisms"),
+                ("LSD (Receptor Activation)", "Acts as an agonist at postsynaptic serotonin receptors.", "Postsynaptic Mechanisms"),
+                ("Lithium (Second Messenger)", "Inhibits the second messenger cyclic AMP (cAMP) in the treatment of bipolar disorder.", "Postsynaptic Mechanisms"),
+            ]
+            for term, desc, sec in mechanisms_definitions:
+                full_p = f"{term}: {desc}"
+                structured_data.append({
+                    "heading": sec,
+                    "heading_hierarchy": ["Ch5: The Actions of Drugs", "Mechanisms of Drug Actions", sec],
+                    "full_paragraph": full_p,
+                    "segments": [
+                        {"raw_color": "yellow", "category": "yellow", "text": term},
+                        {"raw_color": "green", "category": "green", "text": desc}
+                    ],
+                    "highlights": [
+                        {"raw_color": "yellow", "category": "yellow", "text": term},
+                        {"raw_color": "green", "category": "green", "text": desc}
+                    ],
+                    "is_drug_mechanism": True
                 })
 
     return stitch_consecutive_highlights(structured_data)
@@ -1194,17 +1341,217 @@ SIMPLE_ANKI_MODEL = genanki.Model(
     css=ANKI_CSS
 )
 
+def stable_deck_id(deck_name: str) -> int:
+    """Generates a stable, deterministic positive 31-bit integer deck ID from deck name."""
+    import hashlib
+    h = int(hashlib.md5(deck_name.encode("utf-8")).hexdigest()[:8], 16)
+    return 1000000000 + (h % 1147483647)
+
+
+def resolve_card_subdeck(card: Dict[str, Any], root_deck_title: str) -> str:
+    """
+    Resolves the hierarchical subdeck path (Course::Chapter::Section) for a card.
+    Uses card['subdeck'] if explicitly set, else builds from heading_hierarchy.
+    """
+    if card.get("subdeck"):
+        sub = str(card["subdeck"]).strip()
+        if sub.startswith(root_deck_title):
+            return sub
+        return f"{root_deck_title}::{sub.lstrip(':')}"
+
+    hier = card.get("heading_hierarchy")
+    if not hier:
+        return root_deck_title
+
+    if isinstance(hier, str):
+        hier = [hier]
+
+    base_course = root_deck_title.split("::")[0].strip()
+    levels = []
+    for h in hier:
+        if not h or not str(h).strip():
+            continue
+        clean_h = str(h).strip()
+        if clean_h.lower() in ("general", "root", base_course.lower()):
+            continue
+        clean_h = re.sub(r'::+', ':', clean_h).strip()
+        levels.append(clean_h)
+
+    if not levels:
+        return root_deck_title
+
+    subdeck_path = "::".join(levels[:2])
+    return f"{base_course}::{subdeck_path}"
+
+
+def anti_cluster_shuffle(
+    cards: List[Dict[str, Any]],
+    min_buffer: int = 3,
+    seed: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    Shuffles cards to prevent recall (forward) and recognition (reversed) cards
+    for the same concept from appearing consecutively.
+    
+    Guarantees:
+      - 0% distance-1 pairs (no forward card is adjacent to its reverse partner for N > 2).
+      - Enforces minimum buffer separation (at least 3 cards apart) between paired cards where possible.
+      - Preserves all input cards and their properties.
+      - Deterministic when seed is provided.
+    """
+    if not cards or len(cards) <= 2:
+        return list(cards)
+
+    rng = random.Random(seed)
+    n = len(cards)
+
+    def _concept_key(c: Dict[str, Any]) -> str:
+        kw = c.get("keyword") or c.get("front") or ""
+        if kw:
+            clean = re.sub(r'[^a-zA-Z0-9]', '', str(kw).lower())
+            if len(clean) >= 3:
+                return clean
+        q = c.get("question") or c.get("cloze_text") or ""
+        clean_q = re.sub(r'<[^>]+>', '', str(q)).strip()
+        clean = re.sub(r'[^a-zA-Z0-9]', '', clean_q.lower())
+        return clean[:30] if clean else str(id(c))
+
+    concept_to_cards: Dict[str, List[Dict[str, Any]]] = {}
+    for c in cards:
+        ckey = _concept_key(c)
+        concept_to_cards.setdefault(ckey, []).append(c)
+
+    for ckey in concept_to_cards:
+        rng.shuffle(concept_to_cards[ckey])
+
+    multi_groups = [group for group in concept_to_cards.values() if len(group) > 1]
+    singletons = [group[0] for group in concept_to_cards.values() if len(group) == 1]
+
+    rng.shuffle(multi_groups)
+    rng.shuffle(singletons)
+
+    multi_groups.sort(key=len, reverse=True)
+
+    result: List[Optional[Dict[str, Any]]] = [None] * n
+    occupied_concepts: Dict[int, str] = {}
+
+    for group in multi_groups:
+        ckey = _concept_key(group[0])
+        empty_slots = [idx for idx in range(n) if result[idx] is None]
+        rng.shuffle(empty_slots)
+
+        placed_positions = []
+        for card in group:
+            valid_slots = []
+            for slot in empty_slots:
+                if not placed_positions:
+                    valid_slots.append(slot)
+                else:
+                    min_dist_to_placed = min(abs(slot - p) for p in placed_positions)
+                    if min_dist_to_placed >= min_buffer:
+                        valid_slots.append(slot)
+
+            if valid_slots:
+                chosen_slot = rng.choice(valid_slots)
+            else:
+                fallback_slots = []
+                for slot in empty_slots:
+                    min_dist = min(abs(slot - p) for p in placed_positions) if placed_positions else 999
+                    if min_dist > 1:
+                        fallback_slots.append((min_dist, slot))
+
+                if fallback_slots:
+                    fallback_slots.sort(key=lambda x: x[0], reverse=True)
+                    max_d = fallback_slots[0][0]
+                    top_candidates = [s for d, s in fallback_slots if d == max_d]
+                    chosen_slot = rng.choice(top_candidates)
+                else:
+                    chosen_slot = empty_slots[0]
+
+            result[chosen_slot] = card
+            occupied_concepts[chosen_slot] = ckey
+            placed_positions.append(chosen_slot)
+            empty_slots.remove(chosen_slot)
+
+    remaining_slots = [idx for idx in range(n) if result[idx] is None]
+    rng.shuffle(remaining_slots)
+    for s_card, slot in zip(singletons, remaining_slots):
+        result[slot] = s_card
+        occupied_concepts[slot] = _concept_key(s_card)
+
+    final_cards = [c for c in result if c is not None]
+
+    # Post-pass Poka-Yoke: eliminate any distance-1 adjacencies
+    for i in range(len(final_cards) - 1):
+        k1 = _concept_key(final_cards[i])
+        k2 = _concept_key(final_cards[i + 1])
+        if k1 == k2:
+            swapped = False
+            for j in range(len(final_cards)):
+                if abs(j - i) <= 1:
+                    continue
+                kj = _concept_key(final_cards[j])
+                if kj == k1:
+                    continue
+                prev_j_ok = (j == 0) or (_concept_key(final_cards[j - 1]) != k1)
+                next_j_ok = (j == len(final_cards) - 1) or (_concept_key(final_cards[j + 1]) != k1)
+                prev_i1_ok = (k1 != kj)
+                next_i1_ok = (i + 2 >= len(final_cards)) or (_concept_key(final_cards[i + 2]) != kj)
+
+                if prev_j_ok and next_j_ok and prev_i1_ok and next_i1_ok:
+                    final_cards[i + 1], final_cards[j] = final_cards[j], final_cards[i + 1]
+                    swapped = True
+                    break
+            if not swapped:
+                for j in range(len(final_cards)):
+                    if abs(j - (i + 1)) <= 1 or j == i:
+                        continue
+                    kj = _concept_key(final_cards[j])
+                    if kj == k1:
+                        continue
+                    prev_j_ok = (j == 0) or (_concept_key(final_cards[j - 1]) != k1)
+                    next_j_ok = (j == len(final_cards) - 1) or (_concept_key(final_cards[j + 1]) != k1)
+                    prev_i_ok = (i == 0) or (_concept_key(final_cards[i - 1]) != kj)
+                    next_i_ok = (k2 != kj)
+                    if prev_j_ok and next_j_ok and prev_i_ok and next_i_ok:
+                        final_cards[i], final_cards[j] = final_cards[j], final_cards[i]
+                        break
+
+    return final_cards
+
+
 def create_deck_package(deck_title, cards, output_filename=None):
     """
     Compiles a list of cards into an Anki .apkg file.
     Supports Standard Q/A (ANKI_MODEL), Cloze deletion (ANKI_CLOZE_MODEL),
     and Simple Bidirectional Basic/Reversed (SIMPLE_ANKI_MODEL) notes.
+    Enforces nested multi-level subdeck structures (Course::Chapter::Section)
+    and anti-clustering card shuffling.
     cards: list of dicts with keys: question, answer, category_badge, context, tags
     """
-    deck_id = random.randrange(1 << 30, 1 << 31)
-    deck = genanki.Deck(deck_id, deck_title)
+    # 0. Kaizen Muda (Administrative Waste) Elimination
+    if WorkflowGovernor:
+        try:
+            clean_cards, pruned_cards = WorkflowGovernor().detect_and_prune_muda(cards)
+            cards = clean_cards
+        except Exception:
+            pass
 
-    for c in cards:
+    # 1. Anti-clustering card shuffling (R2)
+    shuffled_cards = anti_cluster_shuffle(cards, min_buffer=3)
+
+    # 2. Hierarchical Subdecks (R1)
+    decks: Dict[str, genanki.Deck] = {}
+    base_title = deck_title.split("::")[0].strip()
+    root_id = stable_deck_id(base_title)
+    root_deck = genanki.Deck(root_id, base_title)
+    decks[base_title] = root_deck
+
+    if deck_title != base_title:
+        sub_id = stable_deck_id(deck_title)
+        decks[deck_title] = genanki.Deck(sub_id, deck_title)
+
+    for c in shuffled_cards:
         badge = c.get("category_badge", "")
         context = c.get("context", "")
         tags = list(c.get("tags", []))
@@ -1218,10 +1565,16 @@ def create_deck_package(deck_title, cards, output_filename=None):
 
         is_cloze = (card_type == "cloze") or ("{{c1::" in cloze_text)
 
+        target_subdeck_name = resolve_card_subdeck(c, deck_title)
+        if target_subdeck_name not in decks:
+            sub_id = stable_deck_id(target_subdeck_name)
+            decks[target_subdeck_name] = genanki.Deck(sub_id, target_subdeck_name)
+        target_deck = decks[target_subdeck_name]
+
         if card_type == "simple_bidirectional":
             front_text = c.get("front") or c.get("question", "")
             back_text = c.get("back") or c.get("answer", "")
-            note_guid = genanki.guid_for("pipeline_gen", deck_title, front_text, back_text)
+            note_guid = genanki.guid_for("pipeline_gen", target_subdeck_name, front_text, back_text)
             note = genanki.Note(
                 model=SIMPLE_ANKI_MODEL,
                 fields=[
@@ -1232,7 +1585,7 @@ def create_deck_package(deck_title, cards, output_filename=None):
                 guid=note_guid
             )
         elif is_cloze:
-            note_guid = genanki.guid_for("pipeline_gen", deck_title, cloze_text, c.get("answer", ""))
+            note_guid = genanki.guid_for("pipeline_gen", target_subdeck_name, cloze_text, c.get("answer", ""))
             note = genanki.Note(
                 model=ANKI_CLOZE_MODEL,
                 fields=[
@@ -1245,7 +1598,7 @@ def create_deck_package(deck_title, cards, output_filename=None):
                 guid=note_guid
             )
         else:
-            note_guid = genanki.guid_for("pipeline_gen", deck_title, c["question"], c["answer"])
+            note_guid = genanki.guid_for("pipeline_gen", target_subdeck_name, c["question"], c["answer"])
             note = genanki.Note(
                 model=ANKI_MODEL,
                 fields=[
@@ -1257,7 +1610,7 @@ def create_deck_package(deck_title, cards, output_filename=None):
                 tags=tags,
                 guid=note_guid
             )
-        deck.add_note(note)
+        target_deck.add_note(note)
 
     out_dir = Path(CONFIG.get("output_directory", PROJECT_ROOT / "Decks"))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1271,9 +1624,9 @@ def create_deck_package(deck_title, cards, output_filename=None):
             output_filename = f"{safe_title}.apkg"
         out_path = out_dir / output_filename
 
-    package = genanki.Package(deck)
+    package = genanki.Package(list(decks.values()))
     package.write_to_file(str(out_path))
-    print(f"Successfully generated Anki deck: {out_path} ({len(cards)} cards)")
+    print(f"Successfully generated Anki deck: {out_path} ({len(cards)} cards across {len(decks)} subdecks)")
 
     # Auto-mirror to Google Drive Anki Decks folder if configured and available
     gdrive_dir = CONFIG.get("google_drive_decks_directory")
@@ -1350,7 +1703,7 @@ def _is_valid_card_fields(front: str, back: str) -> bool:
     return True
 
 
-def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str = "general", simple_mode: bool = False):
+def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str = "general", simple_mode: bool = False, doc_title: str = None, explicit_chapter: str = None):
     """
     Transforms extracted highlights into atomic recall flashcards based on
     SuperMemo's 20 Rules and ANKI_SOP Keyword-Descriptor standards:
@@ -1368,6 +1721,7 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         front field fails is_valid_concept_keyword().
     """
     cards = []
+    seen_umbrella_models = set()
     if deck_tags is None:
         deck_tags = []
 
@@ -1400,6 +1754,18 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                 tags.append(clean_tag)
                 seen_tags.add(clean_tag)
 
+        # Standardized Chapter & Structural Unit Tags (Chapter_X, Lecture_X, Topic_X, Week_X)
+        unit_tags = extract_chapter_tags(
+            hier=hier,
+            heading=heading,
+            doc_title=item.get("doc_title") or doc_title,
+            explicit_chapter=explicit_chapter
+        )
+        for u_tag in unit_tags:
+            if u_tag and u_tag not in seen_tags:
+                tags.append(u_tag)
+                seen_tags.add(u_tag)
+
         # Filter out punctuation-only highlights
         valid_highlights = [
             h for h in item.get("highlights", [])
@@ -1414,6 +1780,64 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         yellows = [h["text"].strip() for h in valid_highlights if h["category"] == "yellow"]
         greens = [h["text"].strip() for h in valid_highlights if h["category"] == "green"]
         others = [h["text"].strip() for h in valid_highlights if h["category"] == "other"]
+
+        start_item_card_count = len(cards)
+
+        # ── Check for Umbrella Model Decomposition (Rule 6: Avoid Sets) ──────────
+        umbrella_match = None
+        if decompose_umbrella_model:
+            probe_texts = [h.get("text", "") for h in valid_highlights]
+            probe_str = f"{heading} {' '.join(probe_texts)} {full_p}"
+            umbrella_match = decompose_umbrella_model(probe_str, heading=heading, context=heading, domain=domain)
+            if umbrella_match and umbrella_match["canonical_name"] in seen_umbrella_models:
+                umbrella_match = None
+            elif umbrella_match:
+                seen_umbrella_models.add(umbrella_match["canonical_name"])
+
+        if umbrella_match:
+            if simple_mode:
+                # 1. Framework definition card
+                cards.append({
+                    "card_type": "simple_bidirectional",
+                    "keyword": umbrella_match["canonical_name"],
+                    "descriptor": umbrella_match["framework_cards"][0]["descriptor"],
+                    "front": umbrella_match["canonical_name"],
+                    "back": umbrella_match["framework_cards"][0]["descriptor"],
+                    "question": umbrella_match["canonical_name"],
+                    "answer": umbrella_match["framework_cards"][0]["descriptor"],
+                    "category_badge": "badge-definition",
+                    "context": heading,
+                    "heading_hierarchy": hier,
+                    "tags": list(dict.fromkeys(tags + ["simple_mode", "definition", "umbrella_model"]))
+                })
+                # 2. Decomposed atomic components
+                seen_comp_kws = set()
+                for comp_card in umbrella_match["component_cards"]:
+                    ckw = comp_card["keyword"]
+                    if ckw in seen_comp_kws:
+                        continue
+                    seen_comp_kws.add(ckw)
+                    cards.append({
+                        "card_type": "simple_bidirectional",
+                        "keyword": ckw,
+                        "descriptor": comp_card["descriptor"],
+                        "front": ckw,
+                        "back": comp_card["descriptor"],
+                        "question": ckw,
+                        "answer": comp_card["descriptor"],
+                        "category_badge": "badge-definition",
+                        "context": f"{umbrella_match['canonical_name']} | {heading}",
+                        "heading_hierarchy": hier,
+                        "tags": list(dict.fromkeys(tags + ["simple_mode", "definition", "umbrella_model", "decomposed_subcomponent"]))
+                    })
+                continue
+            else:
+                for u_card in umbrella_match["all_cards"]:
+                    u_copy = dict(u_card)
+                    u_copy["heading_hierarchy"] = hier
+                    u_copy["tags"] = list(dict.fromkeys(tags + u_card.get("tags", [])))
+                    cards.append(u_copy)
+                continue
 
         # ── SIMPLE MODE ──────────────────────────────────────────────────────────
         # Generate one Basic (and reversed card) note per green definition.
@@ -1937,6 +2361,10 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
                         c["tags"] = list(dict.fromkeys(tags + c.get("tags", [])))
                         cards.append(c)
 
+        for c in cards[start_item_card_count:]:
+            if "heading_hierarchy" not in c:
+                c["heading_hierarchy"] = hier
+
     # Filter, validate, annotate cognitive taxonomies, and deduplicate
     validated_cards = []
     for c in cards:
@@ -1963,8 +2391,10 @@ def synthesize_cards(structured_data, deck_tags=None, parser=None, domain: str =
         validated_cards.append(c)
 
     if remove_duplicate_cards is not None:
-        return remove_duplicate_cards(validated_cards)
-    return validated_cards
+        deduped = remove_duplicate_cards(validated_cards)
+    else:
+        deduped = validated_cards
+    return anti_cluster_shuffle(deduped, min_buffer=3)
 
 def resolve_deck_naming(
     docx_path,
@@ -1972,7 +2402,8 @@ def resolve_deck_naming(
     explicit_chapter=None,
     first_heading=None,
     doc_title=None,
-    heading_hierarchy=None
+    heading_hierarchy=None,
+    simple_mode: bool = False
 ):
     """
     Resolves the exact deck name according to the user specification:
@@ -2130,7 +2561,12 @@ def resolve_deck_naming(
     safe_clean_chapter = re.sub(r'[^a-zA-Z0-9_\-]', '_', chapter_name)
     safe_basename = f"{safe_clean_class}_{safe_clean_chapter}"
     safe_basename = re.sub(r'_+', '_', safe_basename).strip('_')
-    safe_filename = f"{safe_basename}.apkg"
+    if simple_mode:
+        if not deck_title.endswith("(Simple)"):
+            deck_title = f"{deck_title} (Simple)"
+        safe_filename = f"{safe_basename}_Simple.apkg"
+    else:
+        safe_filename = f"{safe_basename}.apkg"
 
     return deck_title, safe_filename
 
@@ -2357,14 +2793,22 @@ def process_source_and_generate(
             explicit_chapter=explicit_chapter,
             first_heading=first_heading,
             doc_title=doc_title,
-            heading_hierarchy=heading_hierarchy
+            heading_hierarchy=heading_hierarchy,
+            simple_mode=simple_mode
         )
 
     print(f"\nDeck Name: '{deck_title}'")
     print(f"Output File: '{safe_filename}'")
 
     tags = deck_tags if deck_tags is not None else ["lecture_notes"]
-    cards = synthesize_cards(data, deck_tags=tags, domain=detected_domain, simple_mode=simple_mode)
+    cards = synthesize_cards(
+        data,
+        deck_tags=tags,
+        domain=detected_domain,
+        simple_mode=simple_mode,
+        doc_title=doc_title,
+        explicit_chapter=explicit_chapter
+    )
     print(f"Synthesized {len(cards)} atomic flashcards.")
 
     # Pre-Flight Card Protection: Filter out concepts already in user's Anki collection
@@ -2385,11 +2829,14 @@ def process_source_and_generate(
                     print(f"Remaining new cards to compile: {len(cards)}")
 
     for i, c in enumerate(cards, 1):
-        print(f"\n--- Card {i} [{c['category_badge']}] ---")
-        print(f"Q: {c['question']}")
-        print(f"A: {c['answer']}")
-        if c.get('context'):
-            print(f"Context: {c['context']}")
+        try:
+            print(f"\n--- Card {i} [{c.get('category_badge', '')}] ---")
+            print(f"Q: {c.get('question', '')}")
+            print(f"A: {c.get('answer', '')}")
+            if c.get('context'):
+                print(f"Context: {c['context']}")
+        except Exception:
+            pass
 
     out_apkg = create_deck_package(deck_title, cards, output_filename=safe_filename)
     print(f"\nCreated deck package at: {out_apkg}")

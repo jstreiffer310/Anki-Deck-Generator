@@ -445,6 +445,22 @@
             </div>
           </div>
 
+          <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; background: rgba(168, 85, 247, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.25);">
+            <div style="display: flex; align-items: flex-start; gap: 8px;">
+              <input type="checkbox" id="checkAutoExtract" style="width: auto; margin-top: 3px;" onchange="document.getElementById('syllabusInputDiv').style.display = this.checked ? 'block' : 'none'">
+              <div>
+                <label for="checkAutoExtract" style="margin: 0; font-weight: 600; cursor: pointer;">AI Auto-Extract Mode</label>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                  Bypass manual highlighting. Upload raw slides and a syllabus, and the AI will auto-extract virtual highlights mapped to learning objectives.
+                </div>
+              </div>
+            </div>
+            <div id="syllabusInputDiv" style="display: none; margin-top: 8px; padding-left: 24px;">
+              <label for="syllabusFile" style="font-size: 11px; font-weight: 600;">Syllabus / Course Outline File:</label>
+              <input type="text" id="syllabusFile" placeholder="C:\path\to\syllabus.docx" style="font-size: 12px; padding: 6px;">
+            </div>
+          </div>
+
           <button class="btn" id="btnGenerate" onclick="generateDeck()">
             <span id="btnText">⚡ Generate & Sync Deck</span>
           </button>
@@ -603,6 +619,18 @@
       const gdocInput = document.getElementById('inputGDocUrl');
       gdocInput.value = c.saved_gdoc_url || '';
 
+      // Auto-fill Syllabus
+      const syllabusInput = document.getElementById('syllabusFile');
+      if (syllabusInput) {
+        syllabusInput.value = '';
+        if (c.documents && c.documents.length > 0) {
+          const syllabusDoc = c.documents.find(d => d.is_syllabus);
+          if (syllabusDoc) {
+            syllabusInput.value = syllabusDoc.path;
+          }
+        }
+      }
+
       // Auto-toggle mode to preferred mode
       const prefMode = c.preferred_mode || (c.documents && c.documents.length > 0 ? 'file' : 'gdoc');
       setMode(prefMode);
@@ -732,7 +760,9 @@
           domain: selectedCourse.domain,
           auto_inject: document.getElementById('checkAutoInject').checked,
           simple_mode: document.getElementById('checkSimpleMode') ? document.getElementById('checkSimpleMode').checked : false,
-          preserve_existing: document.getElementById('checkPreserveExisting') ? document.getElementById('checkPreserveExisting').checked : true
+          preserve_existing: document.getElementById('checkPreserveExisting') ? document.getElementById('checkPreserveExisting').checked : true,
+          auto_extract: document.getElementById('checkAutoExtract') ? document.getElementById('checkAutoExtract').checked : false,
+          syllabus: document.getElementById('syllabusFile') ? document.getElementById('syllabusFile').value : null
         };
 
         const res = await fetch('/api/generate', {

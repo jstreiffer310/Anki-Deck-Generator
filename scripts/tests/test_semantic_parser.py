@@ -78,7 +78,7 @@ class TestANKISOPCoreSentences:
         # Forward Card (Recall)
         assert fwd["card_type"] == "bidirectional_definition"
         assert fwd["keyword"] == "Basic developmental science"
-        assert "What is the definition of <b>Basic developmental science</b>?" in fwd["question"]
+        assert "What is the applied definition of <b>Basic developmental science</b>?" in fwd["question"]
         assert fwd["answer"] == "Description, explanation, and optimization of intra-individual change."
         assert fwd["category_badge"] == "badge-definition"
         assert "forward" in fwd["tags"]
@@ -86,7 +86,7 @@ class TestANKISOPCoreSentences:
         # Reverse Card (Recognition)
         assert rev["card_type"] == "bidirectional_definition"
         assert rev["keyword"] == "Basic developmental science"
-        assert "What term is defined by:<br><i>Description, explanation, and optimization of intra-individual change.</i>" in rev["question"]
+        assert "What term or concept is applied/defined by:<br><i>Description, explanation, and optimization of intra-individual change.</i>" in rev["question"]
         assert rev["answer"] == "Basic developmental science"
         assert rev["category_badge"] == "badge-definition"
         assert "reverse" in rev["tags"]
@@ -105,7 +105,7 @@ class TestANKISOPCoreSentences:
         assert len(cards) == 2
         fwd = cards[0]
         assert fwd["keyword"] == "Therapeutic index"
-        assert "What is the definition of <b>Therapeutic index</b>?" in fwd["question"]
+        assert "What is the applied definition of <b>Therapeutic index</b>?" in fwd["question"]
         assert fwd["answer"] == "The ratio of toxic dose to effective dose."
 
     def test_lowercase_input_handling(self, parser):

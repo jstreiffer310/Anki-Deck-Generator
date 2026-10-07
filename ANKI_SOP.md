@@ -135,10 +135,16 @@ Every card is tagged with its **full heading hierarchy** — one tag per level �
 - `[domain]` — e.g. `statistics`, `pharmacology`, `developmental_psychology`, `professionalism`
 - `[heading_level_1]`, `[heading_level_2]`, ... — one per level of heading hierarchy
 
+**Chapter Tagging Requirement (Mandatory when available)**:
+In addition to heading tags and domain tags, every card MUST include a standardized chapter tag (e.g., `Chapter_1`, `Chapter_2`, `Chapter_3`, `Chapter_4`, `Chapter_5`) whenever chapter information is identifiable from the document title, heading hierarchy, section heading, or metadata.
+- **Normalization standard**: `Chapter_<N>` (e.g. `Chapter_1`, `Chapter_4`). Matches `Chapter 1`, `Ch 1`, `Ch1`, `Chap 1`, or leading numbered headings like `1: Goals...` / `2: Heredity...`.
+- **Structural unit tags**: When lecture, topic, or week numbers are present alongside or instead of chapters (e.g. `LEC 1`, `Lecture 2`, `TOPIC 3`, `Week 2`), also inject normalized `Lecture_<N>`, `Topic_<N>`, or `Week_<N>` tags.
+- **Filtering benefit**: Enables clean browser filtering and targeted filtered decks in Anki (e.g., `tag:Chapter_1` or `tag:Chapter_5`).
+
 **Usage in Anki**:
-- Filter a chapter: `deck:"PSYC 2110*" tag:Brain_Development`
+- Filter a chapter: `deck:"PSYC 2110*" tag:Chapter_1` or `tag:Brain_Development`
 - Study by domain: `tag:statistics`
-- Create a filtered deck for a test: combine `tag:TOPIC_3` + `deck:"PSYC 3031*"`
+- Create a filtered deck for a test: combine `tag:TOPIC_3` + `deck:"PSYC 3031*"` or `tag:Chapter_4` + `deck:"PSYC 3590*"`
 
 ---
 

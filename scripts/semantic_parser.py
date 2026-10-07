@@ -1010,6 +1010,577 @@ def split_highlight_fallback(
 
 
 # ============================================================================
+# 5b. Umbrella Framework & Recursive Sub-Component Decomposition Engine (Rule 6)
+# ============================================================================
+
+UMBRELLA_MODELS: Dict[str, Dict[str, Any]] = {
+    "developmental_niche": {
+        "canonical_name": "Developmental Niche",
+        "aliases": [
+            "developmental niche", "super and harkness", "super & harkness",
+            "three subsystems of the developmental niche", "subsystems of developmental niche"
+        ],
+        "domain": "developmental_psychology",
+        "theorist": "Super & Harkness (1986)",
+        "framework_descriptor": (
+            "A theoretical framework by Super & Harkness conceptualizing how culture structures child development "
+            "through three interacting subsystems surrounding the child: physical and social settings, culturally "
+            "regulated customs of childcare, and caretaker psychology."
+        ),
+        "components": [
+            {
+                "name": "Physical and Social Settings (Developmental Niche)",
+                "short_name": "Physical and Social Settings",
+                "tag": "developmental_niche_settings",
+                "descriptor": (
+                    "The subsystem of Super & Harkness's developmental niche comprising the physical living space, "
+                    "household composition, peer presence, family size, and social density shaping a child's daily life."
+                ),
+                "example": "Living arrangements, household size, multi-generational caregiving, urban vs. rural ecology.",
+                "fwd_question": "Within Super & Harkness's developmental niche framework, what constitutes the <b>Physical and Social Settings</b> subsystem?",
+                "rev_question": "Which subsystem of Super & Harkness's developmental niche encompasses living arrangements, household density, and the child's daily physical ecology?",
+            },
+            {
+                "name": "Culturally Regulated Customs (Developmental Niche)",
+                "short_name": "Culturally Regulated Customs",
+                "tag": "developmental_niche_customs",
+                "descriptor": (
+                    "The subsystem of Super & Harkness's developmental niche consisting of culturally established "
+                    "practices of childcare, child-rearing routines, sleeping arrangements, and institutional schooling."
+                ),
+                "example": "Co-sleeping practices, infant carrying schedules, weaning rituals, formal schooling routines.",
+                "fwd_question": "Within Super & Harkness's developmental niche framework, what constitutes the <b>Culturally Regulated Customs</b> subsystem?",
+                "rev_question": "Which subsystem of Super & Harkness's developmental niche encompasses child-rearing traditions, infant sleeping practices, and culturally normative care routines?",
+            },
+            {
+                "name": "Psychology of Caretakers (Developmental Niche)",
+                "short_name": "Psychology of Caretakers (Parental Ethnotheories)",
+                "tag": "developmental_niche_caretaker_psychology",
+                "descriptor": (
+                    "The subsystem of Super & Harkness's developmental niche encompassing parental belief systems, "
+                    "ethnotheories, developmental milestones expectations, and cultural values regarding children."
+                ),
+                "example": "Parental goals regarding infant independence vs. interdependence, maternal responsiveness styles.",
+                "fwd_question": "Within Super & Harkness's developmental niche framework, what constitutes the <b>Psychology of Caretakers</b> (Parental Ethnotheories) subsystem?",
+                "rev_question": "Which subsystem of Super & Harkness's developmental niche encompasses parental belief systems, child-rearing values, and ethnotheories?",
+            }
+        ]
+    },
+    "ecological_systems": {
+        "canonical_name": "Bronfenbrenner's Ecological Systems Theory",
+        "aliases": [
+            "ecological systems theory", "bronfenbrenner", "bioecological model",
+            "ecological systems model"
+        ],
+        "domain": "developmental_psychology",
+        "theorist": "Urie Bronfenbrenner",
+        "framework_descriptor": (
+            "A contextual developmental theory positing that human development is shaped by interactions "
+            "across five nested environmental systems, ranging from direct face-to-face settings to overarching cultural macrosystems."
+        ),
+        "components": [
+            {
+                "name": "Microsystem (Ecological Systems Theory)",
+                "short_name": "Microsystem",
+                "tag": "ecological_microsystem",
+                "descriptor": "The innermost environmental layer consisting of immediate, direct, face-to-face interactions and relationships experienced by the developing child.",
+                "example": "Immediate family, classroom/school setting, peer group, neighborhood play area.",
+                "fwd_question": "In Bronfenbrenner's ecological model, what is the definition of the <b>Microsystem</b>?",
+                "rev_question": "In Bronfenbrenner's ecological model, which system consists of the child's immediate, direct face-to-face settings (family, classroom, peers)?",
+            },
+            {
+                "name": "Mesosystem (Ecological Systems Theory)",
+                "short_name": "Mesosystem",
+                "tag": "ecological_mesosystem",
+                "descriptor": "The layer comprising interconnections, linkages, and relationships between two or more of the child's immediate microsystems.",
+                "example": "Parent-teacher conferences, collaboration between family and church, connections between home and peer group.",
+                "fwd_question": "In Bronfenbrenner's ecological model, what is the definition of the <b>Mesosystem</b>?",
+                "rev_question": "In Bronfenbrenner's ecological model, which system represents interactions between two or more of the child's microsystems (e.g., parent-teacher relations)?",
+            },
+            {
+                "name": "Exosystem (Ecological Systems Theory)",
+                "short_name": "Exosystem",
+                "tag": "ecological_exosystem",
+                "descriptor": "Environmental settings that the developing child does not actively inhabit, but which indirectly exert significant influence on their immediate environment.",
+                "example": "Parental workplace policies, parental maternity/paternity leave, school board administrative decisions, community welfare services.",
+                "fwd_question": "In Bronfenbrenner's ecological model, what is the definition of the <b>Exosystem</b>?",
+                "rev_question": "In Bronfenbrenner's ecological model, which system consists of external settings the child never enters but that indirectly affect them (e.g., parental workplace)?",
+            },
+            {
+                "name": "Macrosystem (Ecological Systems Theory)",
+                "short_name": "Macrosystem",
+                "tag": "ecological_macrosystem",
+                "descriptor": "The overarching cultural, subcultural, ideological, socioeconomic, and legal blueprints shaping all underlying ecological systems.",
+                "example": "Cultural values of individualism vs. collectivism, national laws, healthcare systems, prevailing economic conditions.",
+                "fwd_question": "In Bronfenbrenner's ecological model, what is the definition of the <b>Macrosystem</b>?",
+                "rev_question": "In Bronfenbrenner's ecological model, which system comprises the overarching cultural values, legal structures, and economic ideologies of a society?",
+            },
+            {
+                "name": "Chronosystem (Ecological Systems Theory)",
+                "short_name": "Chronosystem",
+                "tag": "ecological_chronosystem",
+                "descriptor": "The temporal dimension encompassing historical events, societal changes, and normative/non-normative life transitions across the life course.",
+                "example": "The COVID-19 pandemic, family divorce, technological transitions, growing up during the Great Depression.",
+                "fwd_question": "In Bronfenbrenner's ecological model, what is the definition of the <b>Chronosystem</b>?",
+                "rev_question": "In Bronfenbrenner's ecological model, which dimension encompasses socio-historical changes and cumulative transitions over developmental time?",
+            }
+        ]
+    },
+    "piaget_stages": {
+        "canonical_name": "Piaget's Stages of Cognitive Development",
+        "aliases": [
+            "piaget's stages", "piagetian stages", "stages of cognitive development",
+            "four stages of cognitive development"
+        ],
+        "domain": "developmental_psychology",
+        "theorist": "Jean Piaget",
+        "framework_descriptor": (
+            "A four-stage structural developmental theory positing that children construct mental models of the world "
+            "through qualitative reorganizations of cognitive schemas."
+        ),
+        "components": [
+            {
+                "name": "Sensorimotor Stage (Piaget)",
+                "short_name": "Sensorimotor Stage",
+                "tag": "piaget_sensorimotor",
+                "descriptor": "The cognitive developmental stage (birth to ~2 years) where infants coordinate sensory perceptions with motor behaviors, culminating in object permanence and deferred imitation.",
+                "example": "Searching for a hidden toy under a blanket, circular reactions, A-not-B error resolution.",
+                "fwd_question": "What are the core cognitive characteristics of Piaget's <b>Sensorimotor Stage</b> (0–2 years)?",
+                "rev_question": "Which Piagetian cognitive stage spans birth to 2 years and centers on coordinating sensory inputs with motor actions and acquiring object permanence?",
+            },
+            {
+                "name": "Preoperational Stage (Piaget)",
+                "short_name": "Preoperational Stage",
+                "tag": "piaget_preoperational",
+                "descriptor": "The cognitive developmental stage (~2 to 7 years) characterized by symbolic thought, language explosion, and imaginative play, but limited by egocentrism, centration, and lack of conservation.",
+                "example": "Three-mountain task failure, attributing living qualities to inanimate objects (animism), failing liquid conservation tasks.",
+                "fwd_question": "What are the core cognitive characteristics of Piaget's <b>Preoperational Stage</b> (2–7 years)?",
+                "rev_question": "Which Piagetian cognitive stage spans ages 2 to 7 and features symbolic representation and pretend play alongside egocentrism and absence of conservation?",
+            },
+            {
+                "name": "Concrete Operational Stage (Piaget)",
+                "short_name": "Concrete Operational Stage",
+                "tag": "piaget_concrete_operational",
+                "descriptor": "The cognitive developmental stage (~7 to 11 years) where children master mental operations on physical/tangible objects, demonstrating conservation, reversibility, decentration, and transitive inference.",
+                "example": "Successfully understanding that clay volume remains constant despite shape alteration; seriation of sticks by length.",
+                "fwd_question": "What are the core cognitive characteristics of Piaget's <b>Concrete Operational Stage</b> (7–11 years)?",
+                "rev_question": "Which Piagetian cognitive stage spans ages 7 to 11 and is marked by logical mental operations on tangible objects, reversibility, and mastery of conservation?",
+            },
+            {
+                "name": "Formal Operational Stage (Piaget)",
+                "short_name": "Formal Operational Stage",
+                "tag": "piaget_formal_operational",
+                "descriptor": "The cognitive developmental stage (age 11+ to adulthood) characterized by abstract hypothetical-deductive reasoning, propositional logic, and systematic scientific problem-solving.",
+                "example": "Pendulum problem hypothesis testing, reasoning about hypothetical worlds and abstract moral concepts.",
+                "fwd_question": "What are the core cognitive characteristics of Piaget's <b>Formal Operational Stage</b> (11+ years)?",
+                "rev_question": "Which Piagetian cognitive stage emerges around age 11 and enables systematic hypothetical-deductive reasoning, abstract thinking, and propositional logic?",
+            }
+        ]
+    },
+    "attachment_styles": {
+        "canonical_name": "Ainsworth's Attachment Classifications",
+        "aliases": [
+            "attachment styles", "attachment classifications", "strange situation",
+            "mary ainsworth", "attachment patterns"
+        ],
+        "domain": "developmental_psychology",
+        "theorist": "Mary Ainsworth",
+        "framework_descriptor": (
+            "A taxonomical framework assessing infant-caregiver socio-emotional bonds based on behavioral patterns "
+            "exhibited during separation and reunion episodes in the Strange Situation paradigm."
+        ),
+        "components": [
+            {
+                "name": "Secure Attachment (Strange Situation)",
+                "short_name": "Secure Attachment",
+                "tag": "attachment_secure",
+                "descriptor": "Attachment pattern where the infant uses the primary caregiver as a secure base for exploration, demonstrates visible distress upon separation, and actively seeks comfort, which readily soothes them upon reunion.",
+                "example": "Infant explores toys freely when mother is present, cries when she leaves, and calms quickly with physical contact upon her return.",
+                "fwd_question": "What behavioral pattern defines <b>Secure Attachment</b> in Ainsworth's Strange Situation paradigm?",
+                "rev_question": "Which attachment classification is characterized by using the parent as a secure base, showing separation distress, and being quickly comforted upon reunion?",
+            },
+            {
+                "name": "Insecure-Avoidant Attachment (Strange Situation)",
+                "short_name": "Insecure-Avoidant Attachment",
+                "tag": "attachment_avoidant",
+                "descriptor": "Attachment pattern where the infant appears indifferent to the caregiver's presence or departure and actively avoids, ignores, or turns away from the caregiver upon reunion despite high internal physiological arousal.",
+                "example": "Infant shows little outwardly visible emotion when mother departs and looks away or plays with toys without greeting her upon reunion.",
+                "fwd_question": "What behavioral pattern defines <b>Insecure-Avoidant Attachment</b> in Ainsworth's Strange Situation paradigm?",
+                "rev_question": "Which attachment classification is characterized by minimal overt distress upon separation and active turning away or ignoring of the caregiver upon reunion?",
+            },
+            {
+                "name": "Insecure-Resistant / Ambivalent Attachment (Strange Situation)",
+                "short_name": "Insecure-Resistant / Ambivalent Attachment",
+                "tag": "attachment_resistant_ambivalent",
+                "descriptor": "Attachment pattern where the infant shows intense anxiety, clings rather than explores, exhibits extreme distress upon separation, and displays contradictory seeking and angry resistance (e.g., hitting or squirming away) upon reunion.",
+                "example": "Infant clings to mother, cries inconsolably when left alone, and pushes away or kicks when mother attempts to hold them during reunion.",
+                "fwd_question": "What behavioral pattern defines <b>Insecure-Resistant / Ambivalent Attachment</b> in Ainsworth's Strange Situation paradigm?",
+                "rev_question": "Which attachment classification is characterized by clinging anxiety, extreme separation panic, and mixed proximity-seeking with angry resistance upon reunion?",
+            },
+            {
+                "name": "Disorganized / Disoriented Attachment (Strange Situation)",
+                "short_name": "Disorganized / Disoriented Attachment",
+                "tag": "attachment_disorganized",
+                "descriptor": "Attachment pattern (identified by Main & Solomon) where the infant lacks a coherent behavioral coping strategy, displaying conflicting behaviors such as freezing, wandering aimlessly, or approaching the parent with head averted.",
+                "example": "Infant freezes in a trance-like state midway through approaching the parent; associated with frightening or traumatizing caregiving.",
+                "fwd_question": "What behavioral pattern defines <b>Disorganized / Disoriented Attachment</b> in Ainsworth's Strange Situation paradigm?",
+                "rev_question": "Which attachment classification is characterized by anomalous behaviors such as freezing, fear, or approaching with averted gaze upon caregiver reunion?",
+            }
+        ]
+    },
+    "pharmacokinetics_adme": {
+        "canonical_name": "Pharmacokinetic Processes (ADME)",
+        "aliases": [
+            "adme", "pharmacokinetics", "pharmacokinetic processes",
+            "four processes of pharmacokinetics", "drug disposition"
+        ],
+        "domain": "pharmacology",
+        "theorist": "Classical Pharmacology",
+        "framework_descriptor": (
+            "The four fundamental biological processes (Absorption, Distribution, Metabolism, and Excretion) "
+            "governing what the biological organism does to a drug over time."
+        ),
+        "components": [
+            {
+                "name": "Absorption (Pharmacokinetics)",
+                "short_name": "Absorption",
+                "tag": "pk_absorption",
+                "descriptor": "The pharmacokinetic process by which an administered drug transfers from its site of administration across biological membranes into systemic blood circulation.",
+                "example": "Oral gastrointestinal absorption across mucosal epithelial membranes; sublingual venous absorption.",
+                "fwd_question": "Within pharmacokinetics (ADME), what is the definition of <b>Absorption</b>?",
+                "rev_question": "Which pharmacokinetic process describes the passage of an administered substance from its route of entry into the systemic circulation?",
+            },
+            {
+                "name": "Distribution (Pharmacokinetics)",
+                "short_name": "Distribution",
+                "tag": "pk_distribution",
+                "descriptor": "The pharmacokinetic process by which a drug reversibly disperses and diffuses throughout bodily fluids, tissues, organs, and target sites.",
+                "example": "Penetration of lipid-soluble drugs across the blood-brain barrier; binding of acidic drugs to plasma albumin.",
+                "fwd_question": "Within pharmacokinetics (ADME), what is the definition of <b>Distribution</b>?",
+                "rev_question": "Which pharmacokinetic process describes the reversible movement and dispersion of a drug between the bloodstream and body tissues?",
+            },
+            {
+                "name": "Metabolism / Biotransformation (Pharmacokinetics)",
+                "short_name": "Metabolism / Biotransformation",
+                "tag": "pk_metabolism",
+                "descriptor": "The pharmacokinetic enzymatic transformation of a lipophilic drug molecule into more polar, water-soluble metabolites primarily catalyzed by hepatic enzymes (e.g., CYP450).",
+                "example": "Hepatic Phase I oxidation by CYP3A4; Phase II glucuronidation conjugation.",
+                "fwd_question": "Within pharmacokinetics (ADME), what is the definition of <b>Metabolism / Biotransformation</b>?",
+                "rev_question": "Which pharmacokinetic process describes the enzymatic alteration of parent drug molecules into polar, excretable metabolites, primarily in the liver?",
+            },
+            {
+                "name": "Excretion / Elimination (Pharmacokinetics)",
+                "short_name": "Excretion / Elimination",
+                "tag": "pk_excretion",
+                "descriptor": "The irreversible pharmacokinetic removal of parent drug molecules and metabolites from the body, primarily via renal filtration and urine formation.",
+                "example": "Glomerular filtration and active tubular secretion by the kidneys; biliary excretion into feces.",
+                "fwd_question": "Within pharmacokinetics (ADME), what is the definition of <b>Excretion / Elimination</b>?",
+                "rev_question": "Which pharmacokinetic process describes the physical clearance and irreversible exit of drug molecules from the body, primarily through the kidneys?",
+            }
+        ]
+    },
+    "dopamine_pathways": {
+        "canonical_name": "Major Dopaminergic Pathways",
+        "aliases": [
+            "dopamine pathways", "dopaminergic pathways", "four dopamine pathways",
+            "ascending dopamine pathways"
+        ],
+        "domain": "pharmacology",
+        "theorist": "Neuroanatomy / Neuropsychopharmacology",
+        "framework_descriptor": (
+            "The four primary central nervous system axonal projections that synthesize and transmit dopamine to regulate motor control, incentive motivation, cognitive processing, and neuroendocrine function."
+        ),
+        "components": [
+            {
+                "name": "Mesolimbic Pathway (Dopamine)",
+                "short_name": "Mesolimbic Pathway",
+                "tag": "pathway_mesolimbic",
+                "descriptor": "Dopaminergic pathway projecting from the ventral tegmental area (VTA) to the nucleus accumbens and limbic structures, mediating incentive salience, reward reinforcement, and addictive drug craving.",
+                "example": "Phasic dopamine surges in the nucleus accumbens triggered by cocaine, amphetamine, or nicotine.",
+                "fwd_question": "What anatomical trajectory and functional role defines the <b>Mesolimbic Dopamine Pathway</b>?",
+                "rev_question": "Which dopamine pathway projects from the VTA to the nucleus accumbens and serves as the central neural substrate for reward, motivation, and addiction?",
+            },
+            {
+                "name": "Mesocortical Pathway (Dopamine)",
+                "short_name": "Mesocortical Pathway",
+                "tag": "pathway_mesocortical",
+                "descriptor": "Dopaminergic pathway projecting from the ventral tegmental area (VTA) to the dorsolateral and ventromedial prefrontal cortex, subserving executive cognitive functions, working memory, and affective modulation.",
+                "example": "Hypofunction of this pathway in schizophrenia produces negative symptoms and executive cognitive deficits.",
+                "fwd_question": "What anatomical trajectory and functional role defines the <b>Mesocortical Dopamine Pathway</b>?",
+                "rev_question": "Which dopamine pathway projects from the VTA to the prefrontal cortex, regulating executive functioning, working memory, and cognitive control?",
+            },
+            {
+                "name": "Nigrostriatal Pathway (Dopamine)",
+                "short_name": "Nigrostriatal Pathway",
+                "tag": "pathway_nigrostriatal",
+                "descriptor": "Dopaminergic pathway projecting from the substantia nigra pars compacta (SNc) to the dorsal striatum (caudate and putamen), orchestrating motor initiation, extrapyramidal movement, and procedural habit formation.",
+                "example": "Degeneration of nigrostriatal dopaminergic neurons results in the cardinal motor signs of Parkinson's disease (resting tremor, rigidity, bradykinesia).",
+                "fwd_question": "What anatomical trajectory and functional role defines the <b>Nigrostriatal Dopamine Pathway</b>?",
+                "rev_question": "Which dopamine pathway projects from the substantia nigra to the dorsal striatum and regulates voluntary motor movement (degenerating in Parkinson's disease)?",
+            },
+            {
+                "name": "Tuberoinfundibular Pathway (Dopamine)",
+                "short_name": "Tuberoinfundibular Pathway",
+                "tag": "pathway_tuberoinfundibular",
+                "descriptor": "Dopaminergic pathway projecting from the arcuate nucleus of the hypothalamus to the median eminence / pituitary stalk, where dopamine acts tonic-inhibitorily as prolactin-inhibiting factor.",
+                "example": "D2 receptor blockade by first-generation antipsychotics disinhibits prolactin release, causing hyperprolactinemia.",
+                "fwd_question": "What anatomical trajectory and functional role defines the <b>Tuberoinfundibular Dopamine Pathway</b>?",
+                "rev_question": "Which dopamine pathway projects from the hypothalamus to the pituitary gland to inhibit prolactin secretion?",
+            }
+        ]
+    },
+    "autonomic_divisions": {
+        "canonical_name": "Autonomic Nervous System Divisions",
+        "aliases": [
+            "autonomic nervous system", "divisions of the autonomic nervous system",
+            "ans divisions", "sympathetic and parasympathetic"
+        ],
+        "domain": "pharmacology",
+        "theorist": "Autonomic Physiology",
+        "framework_descriptor": (
+            "The two reciprocal motor subdivisions of the peripheral nervous system (Sympathetic and Parasympathetic) "
+            "that involuntarily regulate homeostatic internal visceral functions and glandular secretion."
+        ),
+        "components": [
+            {
+                "name": "Sympathetic Nervous System (ANS)",
+                "short_name": "Sympathetic Nervous System",
+                "tag": "ans_sympathetic",
+                "descriptor": "The thoracolumbar autonomic division that orchestrates the catabolic 'fight-or-flight' stress response via adrenergic neurotransmission (norepinephrine/epinephrine).",
+                "example": "Pupillary dilation (mydriasis), bronchodilation, tachycardia, inhibition of digestive peristalsis.",
+                "fwd_question": "What physiological functions characterize the <b>Sympathetic Division</b> of the Autonomic Nervous System?",
+                "rev_question": "Which autonomic nervous system division coordinates the 'fight-or-flight' stress reaction via norepinephrine and epinephrine?",
+            },
+            {
+                "name": "Parasympathetic Nervous System (ANS)",
+                "short_name": "Parasympathetic Nervous System",
+                "tag": "ans_parasympathetic",
+                "descriptor": "The craniosacral autonomic division that directs anabolic 'rest-and-digest' vegetative conservation via cholinergic neurotransmission (acetylcholine on muscarinic receptors).",
+                "example": "Pupillary constriction (miosis), bronchoconstriction, bradycardia, stimulation of salivation and gastrointestinal motility.",
+                "fwd_question": "What physiological functions characterize the <b>Parasympathetic Division</b> of the Autonomic Nervous System?",
+                "rev_question": "Which autonomic nervous system division directs 'rest-and-digest' vegetative maintenance via acetylcholine acting on muscarinic receptors?",
+            }
+        ]
+    }
+}
+
+
+def decompose_umbrella_model(
+    text: str,
+    heading: str = "General",
+    context: str = "",
+    domain: str = "general"
+) -> Optional[Dict[str, Any]]:
+    """
+    Identifies high-level umbrella frameworks, models, and taxonomies (SuperMemo Rule 6: Avoid Sets).
+    Unpacks them into:
+      1. Overarching framework definition card.
+      2. Atomic, separate cards for each constituent sub-component.
+    
+    Returns structured dictionary or None if text does not represent a known or structured umbrella model.
+    """
+    if not text:
+        return None
+
+    clean_t = clean_phrase(text).lower()
+    clean_h = clean_phrase(heading).lower()
+    combined_probe = f"{clean_h} {clean_t} {context.lower()}"
+
+    # 1. Match against curated UMBRELLA_MODELS registry
+    matched_model_key = None
+    for model_key, model_data in UMBRELLA_MODELS.items():
+        # Check aliases
+        for alias in model_data["aliases"]:
+            if alias in combined_probe:
+                matched_model_key = model_key
+                break
+        if matched_model_key:
+            break
+
+        # Check domain-specific heuristic indicators
+        if model_key == "developmental_niche":
+            if "developmental niche" in combined_probe or ("settings" in clean_t and "customs" in clean_t and ("beliefs" in clean_t or "caretaker" in clean_t or "ethnotheor" in clean_t)):
+                matched_model_key = model_key
+                break
+
+    if matched_model_key:
+        model = UMBRELLA_MODELS[matched_model_key]
+        m_domain = model.get("domain", domain)
+        heading_tag = re.sub(r'[^a-zA-Z0-9_]', '', heading.replace(" ", "_"))[:30]
+        base_tags = [heading_tag] if heading_tag and heading_tag != "General" else []
+        if m_domain and m_domain not in base_tags:
+            base_tags.append(m_domain)
+
+        # Framework card
+        c_name = model["canonical_name"]
+        f_desc = model["framework_descriptor"]
+        fwd_q = f"What is the theoretical definition and framework of the <b>{c_name}</b>?"
+        rev_q = f"What theoretical framework is defined as:<br><i>{f_desc}</i>"
+
+        fwd_card = {
+            "card_type": "bidirectional_definition",
+            "taxonomy": "term_definition",
+            "keyword": c_name,
+            "descriptor": f_desc,
+            "question": fwd_q,
+            "answer": f_desc,
+            "category_badge": "badge-definition",
+            "context": context or heading,
+            "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "framework", "forward"]))
+        }
+        rev_card = {
+            "card_type": "bidirectional_definition",
+            "taxonomy": "term_definition",
+            "keyword": c_name,
+            "descriptor": f_desc,
+            "question": rev_q,
+            "answer": c_name,
+            "category_badge": "badge-definition",
+            "context": context or heading,
+            "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "framework", "reverse"]))
+        }
+
+        component_card_pairs = []
+        for comp in model["components"]:
+            comp_kw = comp["name"]
+            comp_short = comp.get("short_name", comp_kw)
+            comp_desc = comp["descriptor"]
+            comp_ex = comp.get("example", "")
+            comp_tag = comp.get("tag", "subcomponent")
+
+            comp_ans = comp_desc
+            if comp_ex:
+                comp_ans += f"<br><br><b>Concrete Examples:</b> {comp_ex}"
+
+            c_fwd = {
+                "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
+                "keyword": comp_short,
+                "descriptor": comp_desc,
+                "question": comp.get("fwd_question") or f"What constitutes the <b>{comp_kw}</b>?",
+                "answer": comp_ans,
+                "category_badge": "badge-important",
+                "context": f"{c_name} | {heading}",
+                "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "decomposed_subcomponent", comp_tag, "forward"]))
+            }
+            c_rev = {
+                "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
+                "keyword": comp_short,
+                "descriptor": comp_desc,
+                "question": comp.get("rev_question") or f"What component is defined by:<br><i>{comp_desc}</i>",
+                "answer": comp_short,
+                "category_badge": "badge-important",
+                "context": f"{c_name} | {heading}",
+                "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "decomposed_subcomponent", comp_tag, "reverse"]))
+            }
+            component_card_pairs.extend([c_fwd, c_rev])
+
+        all_cards = [fwd_card, rev_card] + component_card_pairs
+        return {
+            "model_key": matched_model_key,
+            "canonical_name": c_name,
+            "framework_cards": [fwd_card, rev_card],
+            "component_cards": component_card_pairs,
+            "all_cards": all_cards
+        }
+
+    # 2. Dynamic pattern matching for unlisted multi-part lists in text
+    list_intro = re.search(
+        r'([A-Z][a-zA-Z0-9\s\(\)-]{2,40})\s+(?:consists of|comprises|is composed of|has|is divided into)\s+'
+        r'(?:three|four|five|six|\d+)\s+(?:main\s+)?(?:components|subsystems|parts|stages|phases|elements|pillars|dimensions)\b(?::|—|-)?\s*(.*)',
+        text,
+        re.IGNORECASE | re.DOTALL
+    )
+    if list_intro:
+        framework_title = list_intro.group(1).strip()
+        body = list_intro.group(2).strip()
+        # Parse numbered or bulleted items
+        raw_items = re.split(r'(?:\(\d+\)|\b\d+[\.\)]\s+|[•\*\—\–]\s*)', body)
+        parsed_items = [it.strip() for it in raw_items if len(it.strip()) > 8]
+        if len(parsed_items) >= 2:
+            heading_tag = re.sub(r'[^a-zA-Z0-9_]', '', heading.replace(" ", "_"))[:30]
+            base_tags = [heading_tag] if heading_tag and heading_tag != "General" else []
+            if domain and domain != "general":
+                base_tags.append(domain)
+
+            f_desc = f"Multifaceted framework comprising {len(parsed_items)} core components: {clean_phrase(text)}."
+            fwd_card = {
+                "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
+                "keyword": framework_title,
+                "descriptor": f_desc,
+                "question": f"What is the overall framework and structure of <b>{framework_title}</b>?",
+                "answer": f_desc,
+                "category_badge": "badge-definition",
+                "context": context or heading,
+                "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "framework", "forward"]))
+            }
+            rev_card = {
+                "card_type": "bidirectional_definition",
+                "taxonomy": "term_definition",
+                "keyword": framework_title,
+                "descriptor": f_desc,
+                "question": f"What framework is defined by:<br><i>{f_desc}</i>",
+                "answer": framework_title,
+                "category_badge": "badge-definition",
+                "context": context or heading,
+                "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "framework", "reverse"]))
+            }
+
+            component_card_pairs = []
+            for idx, item_str in enumerate(parsed_items, 1):
+                clean_item = clean_phrase(item_str)
+                # Check for "Item Name: Description"
+                colon_split = re.match(r'^([^:—–]{2,35})(?::|—|–)\s*(.*)', clean_item)
+                if colon_split:
+                    comp_name = colon_split.group(1).strip()
+                    comp_desc = colon_split.group(2).strip()
+                else:
+                    words = clean_item.split()
+                    comp_name = " ".join(words[:3]) if len(words) > 3 else clean_item
+                    comp_desc = clean_item
+
+                if not comp_desc.endswith(('.', '!', '?')):
+                    comp_desc += '.'
+
+                c_fwd = {
+                    "card_type": "bidirectional_definition",
+                    "taxonomy": "term_definition",
+                    "keyword": f"{framework_title}: {comp_name}",
+                    "descriptor": comp_desc,
+                    "question": f"Within the <b>{framework_title}</b> framework, what is the role and definition of <b>{comp_name}</b>?",
+                    "answer": comp_desc,
+                    "category_badge": "badge-important",
+                    "context": f"{framework_title} | {heading}",
+                    "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "decomposed_subcomponent", "forward"]))
+                }
+                c_rev = {
+                    "card_type": "bidirectional_definition",
+                    "taxonomy": "term_definition",
+                    "keyword": comp_name,
+                    "descriptor": comp_desc,
+                    "question": f"Within the <b>{framework_title}</b> framework, which component is defined by:<br><i>{comp_desc}</i>",
+                    "answer": comp_name,
+                    "category_badge": "badge-important",
+                    "context": f"{framework_title} | {heading}",
+                    "tags": list(dict.fromkeys(base_tags + ["umbrella_model", "decomposed_subcomponent", "reverse"]))
+                }
+                component_card_pairs.extend([c_fwd, c_rev])
+
+            all_cards = [fwd_card, rev_card] + component_card_pairs
+            return {
+                "model_key": re.sub(r'[^a-zA-Z0-9_]', '_', framework_title.lower()),
+                "canonical_name": framework_title,
+                "framework_cards": [fwd_card, rev_card],
+                "component_cards": component_card_pairs,
+                "all_cards": all_cards
+            }
+
+    return None
+
+
+# ============================================================================
 # 6. SemanticCardParser Implementation
 # ============================================================================
 
@@ -1062,6 +1633,11 @@ class SemanticCardParser:
             elif any(k in heading_lower for k in ("professionalism", "ethics", "professional", "psyc 3000")):
                 domain = "professionalism"
 
+        # 0. Check for Umbrella Model Decomposition (Rule 6: Avoid Sets)
+        umbrella_res = self.decompose_umbrella_model(clean_input, heading=heading, context=context, domain=domain)
+        if umbrella_res and umbrella_res.get("all_cards"):
+            return umbrella_res["all_cards"]
+
         # 1. Attempt LLM Parsing via Ollama
         cards = self.parse_with_ollama(clean_input, highlight_color, heading, context, paragraph_prefix, domain=domain)
         if cards:
@@ -1076,6 +1652,16 @@ class SemanticCardParser:
 
         # 2. Fallback to Deterministic Parser
         return self.parse_with_fallback(clean_input, highlight_color, heading, context, paragraph_prefix, domain=domain)
+
+    def decompose_umbrella_model(
+        self,
+        text: str,
+        heading: str = "General",
+        context: str = "",
+        domain: str = "general"
+    ) -> Optional[Dict[str, Any]]:
+        """Decomposes an umbrella model or multi-part framework into atomic sub-components."""
+        return decompose_umbrella_model(text, heading=heading, context=context, domain=domain)
 
     def parse_with_ollama(
         self,

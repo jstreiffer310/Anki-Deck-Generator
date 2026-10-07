@@ -1289,8 +1289,8 @@ class TestTier4RealWorldScenarios:
             str(sample_docx_path),
             "--deck", "PSYC 3590:Test Deck E2E"
         ]
-        # Execute with 20 second timeout budget
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        # Execute with 60 second timeout budget (resilient to local Ollama inference latency)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         assert res.returncode == 0, f"CLI execution failed with code {res.returncode}: {res.stderr}"
         assert "Successfully generated Anki deck" in res.stdout
 
@@ -1303,7 +1303,7 @@ class TestTier4RealWorldScenarios:
             "--class-name", "PSYC 3590",
             "--chapter", "Lecture 2 - Pharmacodynamics"
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         assert res.returncode == 0
         assert "PSYC 3590" in res.stdout
         assert "Lecture 2 - Pharmacodynamics" in res.stdout
